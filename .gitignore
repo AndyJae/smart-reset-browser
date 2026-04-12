@@ -8,3 +8,5 @@ build/
 *.spec
 *.log
 .env
+# Local plugin launchers (contain machine-specific paths)
+start_with_matching.bat
