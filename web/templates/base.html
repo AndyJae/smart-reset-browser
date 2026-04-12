@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>smart-reset</title>
+  <link rel="stylesheet" href="/static/style.css?v=5">
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <a href="https://www.medien-support.com" target="_blank" rel="noopener" class="sidebar-logo-link">
+      <img src="/static/logo.png" alt="medien-support Logo" class="sidebar-logo-img">
+    </a>
+    <div class="sidebar-logo">smart<span>reset</span></div>
+
+    <nav class="sidebar-nav">
+      {% if session.connected %}
+      <a class="sidebar-link" href="http://{{ session.ip }}" target="_blank" title="Open camera web UI">
+        Open Camera
+      </a>
+      {% else %}
+      <span class="sidebar-link disabled">Open Camera</span>
+      {% endif %}
+
+      <button class="sidebar-link" onclick="toggleHelp()">Help</button>
+
+      <label class="sidebar-link toggle-row">
+        <span>File Logging</span>
+        <input type="checkbox" id="file-logging-toggle" onchange="toggleFileLogging(this.checked)">
+      </label>
+
+      <label class="sidebar-link toggle-row">
+        <span>Dark Mode</span>
+        <input type="checkbox" id="theme-toggle" checked onchange="toggleTheme(this.checked)">
+      </label>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+
+</div>
+
+<!-- NDI FULLSCREEN OVERLAY -->
+<div id="ndi-fullscreen-overlay" class="ndi-fullscreen-overlay" onclick="ndiFullscreenClose()">
+  <img id="ndi-fullscreen-img" class="ndi-fullscreen-img" alt="">
+</div>
+
+<!-- FILE LOGGING MODAL -->
+<div id="logging-info-modal" class="modal-overlay" onclick="closeLoggingInfo(event)">
+  <div class="modal-box modal-box-sm">
+    <h2>File Logging</h2>
+    <div class="modal-scroll">
+      <p>File Logging is enabled for <strong>debugging purposes only</strong>.
+      All operations are written to:</p>
+      <p><code class="log-path-display" id="logging-path"></code></p>
+      <p class="help-contact">To report a problem, send this file to our support team:<br>
+        <a href="mailto:support@medien-support.com?subject=smart-reset%20Log">support@medien-support.com</a>
+      </p>
+    </div>
+    <button class="btn btn-primary" onclick="closeLoggingInfo()">OK</button>
+  </div>
+</div>
+
+<!-- HELP MODAL -->
+<div id="help-modal" class="modal-overlay" onclick="closeHelp(event)">
+  <div class="modal-box">
+    <h2>smart-reset Help</h2>
+
+    <div class="modal-scroll">
+      <p>smart-reset is designed to return all color and black values to their original settings.
+      After all values have been reset, the camera is ready for White and Black Balance.</p>
+
+      <p><strong>Scan Network</strong> — finds cameras in your network. Detected cameras are listed in the scan dropdown.</p>
+
+      <p><strong>Connect</strong> — establishes a connection. If the IP field is empty and scan results are available,
+      Connect automatically uses the first discovered camera. You can still enter IP/port manually at any time.</p>
+
+      <p><strong>Reset Camera</strong> — runs the full reset sequence. The button is active only when connected.
+      Advanced controls are loaded based on the detected camera model. Unsupported functions are disabled automatically.</p>
+
+      <p>Operation details are shown in the log panel (and optional file log).</p>
+
+      <p>After reset, run <strong>ABB / AWW</strong> as needed and activate the options you want to use.</p>
+
+      <p>To open the camera WebGUI directly, use the <strong>Open Camera</strong> button in the sidebar.
+      Some values may require a WebGUI refresh before they are visible there.</p>
+
+      <h3>NDI Monitor</h3>
+      <p>The NDI Monitor displays a live video feed, waveform, and vectorscope directly in the browser.
+      NDI output must be enabled on the camera.</p>
+
+      <p><strong>Sync with camera</strong> — when checked, the NDI feed starts automatically
+      when the camera connects and stops when it disconnects. The tool refreshes the source list
+      and selects the matching feed by camera IP. The dropdown remains usable at all times.</p>
+
+      <p><strong>Refresh</strong> — scans the network for NDI sources. The list is <em>not</em> updated
+      automatically — press Refresh whenever a new camera or NDI source becomes available.</p>
+
+      <p><strong>Start</strong> — opens the NDI connection. After clicking Start, the image takes
+      <strong>3–4 seconds</strong> to appear. This is normal: NDI needs a short negotiation phase
+      before the first frame is delivered.</p>
+
+      <p>Click any image to open it fullscreen. The waveform mode (RGB Parade, RGB Overlay, Luma)
+      can be changed at any time without reconnecting.</p>
+
+      <p><strong>Waveform</strong> — shows signal levels per channel. All modes are computed in
+      <strong>Rec. 709</strong> colour space. Graticule lines at 0, 25, 50, 75, and 100 IRE.</p>
+
+      <p><strong>Vectorscope</strong> — YCbCr <strong>Rec. 709</strong> trace with saturation rings
+      every 10 %, a crosshair at the neutral point, and 75 % colour-bar target boxes
+      (Y, Cy, G, Mg, R, B). Use it to verify colour accuracy and white balance on the connected camera.</p>
+
+      <p class="help-contact">Need more help? Contact us at:
+        <a href="mailto:support@medien-support.com">support@medien-support.com</a>
+      </p>
+    </div>
+
+    <button class="btn btn-primary" onclick="closeHelp()">Close</button>
+  </div>
+</div>
+
+<script>
+// ---------- Theme ----------
+function toggleTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  localStorage.setItem('theme', dark ? 'dark' : 'light');
+}
+(function() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  const cb = document.getElementById('theme-toggle');
+  if (cb) cb.checked = saved === 'dark';
+})();
+
+// ---------- Help modal ----------
+function toggleHelp() {
+  document.getElementById('help-modal').classList.toggle('open');
+}
+function closeHelp(e) {
+  if (!e || e.target === document.getElementById('help-modal')) {
+    document.getElementById('help-modal').classList.remove('open');
+  }
+}
+
+// ---------- File logging ----------
+function toggleFileLogging(enabled) {
+  fetch('/api/logging', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled})})
+  .then(r => r.json())
+  .then(data => {
+    if (enabled && data.path) {
+      document.getElementById('logging-path').textContent = data.path;
+      document.getElementById('logging-info-modal').classList.add('open');
+    }
+  });
+}
+function closeLoggingInfo(e) {
+  if (!e || e.target === document.getElementById('logging-info-modal')) {
+    document.getElementById('logging-info-modal').classList.remove('open');
+  }
+}
+
+// ---------- NDI Monitor ----------
+let _ndiWs = null;
+let _ndiRunning = false;
+let _ndiFullscreenType = 0; // 1=frame, 2=waveform
+let _ndiSyncEnabled = false;
+
+function ndiSyncToggle(enabled) {
+  _ndiSyncEnabled = enabled;
+  localStorage.setItem('ndiSyncCamera', enabled ? '1' : '0');
+}
+
+async function ndiSyncConnect(ip) {
+  if (!_ndiSyncEnabled) return;
+  let data;
+  try { data = await fetch('/api/ndi/sources').then(r => r.json()); }
+  catch (_) { return; }
+  if (!data || !data.ndi_available || !data.sources || data.sources.length === 0) return;
+
+  const sel = document.getElementById('ndi-source-select');
+  if (!sel) return;
+
+  // Rebuild dropdown
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— select source —</option>';
+  data.sources.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s; o.textContent = s;
+    sel.appendChild(o);
+  });
+
+  // Match by camera IP inside source name, fall back to previous selection or first source
+  const target = data.sources.find(s => s.includes(ip))
+    || (prev && data.sources.includes(prev) ? prev : null)
+    || data.sources[0];
+  sel.value = target;
+
+  if (!_ndiRunning) ndiStart();
+}
+
+function ndiSyncDisconnect() {
+  if (!_ndiSyncEnabled) return;
+  if (_ndiRunning) ndiStop();
+}
+
+function ndiFullscreenOpen(type) {
+  const ids = {1: 'ndi-frame', 2: 'ndi-waveform', 3: 'ndi-vectorscope'};
+  const srcImg = document.getElementById(ids[type]);
+  if (!srcImg || !srcImg.src || !srcImg.src.startsWith('blob:')) return;
+  const fsImg = document.getElementById('ndi-fullscreen-img');
+  fsImg.src = srcImg.src;
+  if (type === 3) {
+    fsImg.style.width  = '563px';
+    fsImg.style.height = '563px';
+  } else {
+    fsImg.style.width  = '1408px';
+    fsImg.style.height = '792px';
+  }
+  fsImg.style.imageRendering = type === 1 ? 'auto' : 'pixelated';
+  _ndiFullscreenType = type;
+  document.getElementById('ndi-fullscreen-overlay').classList.add('open');
+}
+
+function ndiFullscreenClose() {
+  document.getElementById('ndi-fullscreen-overlay').classList.remove('open');
+  _ndiFullscreenType = 0;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && _ndiFullscreenType) ndiFullscreenClose();
+});
+
+const _ndiScopeLabels = {
+  parade:  'Waveform — RGB Parade',
+  overlay: 'Waveform — RGB Overlay',
+  luma:    'Waveform — Luma (Y)',
+};
+
+function ndiSetMode(mode) {
+  const label = document.getElementById('ndi-scope-label');
+  if (label) label.textContent = _ndiScopeLabels[mode] || mode;
+  if (_ndiWs && _ndiWs.readyState === WebSocket.OPEN) _ndiWs.send(mode);
+}
+
+function ndiRefreshSources() {
+  fetch('/api/ndi/sources')
+    .then(r => r.json())
+    .then(data => {
+      const warning = document.querySelector('.ndi-sdk-warning');
+      const sel     = document.getElementById('ndi-source-select');
+      const btn     = document.getElementById('ndi-toggle-btn');
+
+      if (data.ndi_available === false) {
+        if (warning) {
+          warning.textContent = '⚠ NDI SDK not installed — NDI Monitor unavailable. Install the NDI 6 SDK from ndi.video and restart.';
+          warning.style.display = 'block';
+        }
+        if (sel)  sel.disabled = true;
+        if (btn)  btn.disabled = true;
+        return;
+      }
+
+      if (warning) warning.style.display = 'none';
+      if (sel)  sel.disabled = false;
+      if (btn)  btn.disabled = false;
+
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">— select source —</option>';
+      (data.sources || []).forEach(s => {
+        const o = document.createElement('option');
+        o.value = s; o.textContent = s;
+        if (s === prev) o.selected = true;
+        sel.appendChild(o);
+      });
+    });
+}
+
+function ndiToggle() {
+  if (_ndiRunning) { ndiStop(); } else { ndiStart(); }
+}
+
+function ndiStart() {
+  const source = document.getElementById('ndi-source-select')?.value;
+  if (!source) return;
+
+  const wrap = document.getElementById('ndi-monitor-wrap');
+  const btn  = document.getElementById('ndi-toggle-btn');
+  const status = document.getElementById('ndi-status');
+  const img  = document.getElementById('ndi-frame');
+
+  wrap.style.display = 'block';
+  btn.textContent = 'Stop';
+  _ndiRunning = true;
+
+  const url = 'ws://' + location.host + '/ws/ndi?source=' + encodeURIComponent(source);
+  _ndiWs = new WebSocket(url);
+  _ndiWs.binaryType = 'arraybuffer';
+
+  _ndiWs.onopen = () => { if (status) status.textContent = 'live'; };
+  _ndiWs.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      if (status) status.textContent = ev.data;
+      return;
+    }
+    const type = new Uint8Array(ev.data, 0, 1)[0];
+    const payload = ev.data.slice(1);
+    const blob = new Blob([payload], {type: 'image/jpeg'});
+    const url = URL.createObjectURL(blob);
+    if (type === 1) {
+      const prev = img.src;
+      img.src = url;
+      if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      if (_ndiFullscreenType === 1) {
+        const fsImg = document.getElementById('ndi-fullscreen-img');
+        if (fsImg) fsImg.src = url;
+      }
+      if (status) status.textContent = 'live';
+    } else if (type === 2) {
+      const waveWrap = document.getElementById('ndi-waveform-wrap');
+      const waveImg  = document.getElementById('ndi-waveform');
+      if (waveWrap) waveWrap.style.display = 'block';
+      if (waveImg) {
+        const prev = waveImg.src;
+        waveImg.src = url;
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      }
+      if (_ndiFullscreenType === 2) {
+        const fsImg = document.getElementById('ndi-fullscreen-img');
+        if (fsImg) fsImg.src = url;
+      }
+    } else if (type === 3) {
+      const vecWrap = document.getElementById('ndi-vectorscope-wrap');
+      const vecImg  = document.getElementById('ndi-vectorscope');
+      if (vecWrap) vecWrap.style.display = 'block';
+      if (vecImg) {
+        const prev = vecImg.src;
+        vecImg.src = url;
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+      }
+      if (_ndiFullscreenType === 3) {
+        const fsImg = document.getElementById('ndi-fullscreen-img');
+        if (fsImg) fsImg.src = url;
+      }
+    }
+  };
+  _ndiWs.onclose = () => { if (_ndiRunning) ndiStop(); };
+  _ndiWs.onerror = () => { if (status) status.textContent = 'error'; _ndiWs?.close(); };
+}
+
+function ndiStop() {
+  _ndiRunning = false;
+  if (_ndiWs) { _ndiWs.onclose = null; _ndiWs.close(); _ndiWs = null; }
+  const btn  = document.getElementById('ndi-toggle-btn');
+  const wrap = document.getElementById('ndi-monitor-wrap');
+  const status = document.getElementById('ndi-status');
+  if (btn)    btn.textContent = 'Start';
+  if (wrap)   wrap.style.display = 'none';
+  if (status) status.textContent = 'connecting…';
+  const waveWrap = document.getElementById('ndi-waveform-wrap');
+  if (waveWrap) waveWrap.style.display = 'none';
+  const vecWrap = document.getElementById('ndi-vectorscope-wrap');
+  if (vecWrap) vecWrap.style.display = 'none';
+}
+
+// Auto-populate sources on page load if monitor panel is present
+if (document.getElementById('ndi-source-select')) ndiRefreshSources();
+
+// Restore NDI sync checkbox state from localStorage
+(function() {
+  if (localStorage.getItem('ndiSyncCamera') === '1') {
+    _ndiSyncEnabled = true;
+    const cb = document.getElementById('ndi-sync-camera');
+    if (cb) cb.checked = true;
+  }
+})();
+
+// ---------- WebSocket log stream ----------
+(function() {
+  const logBox = document.getElementById('log-box');
+  if (!logBox) return;
+
+  function connect() {
+    const ws = new WebSocket('ws://' + location.host + '/ws/logs');
+    ws.onopen = () => { };
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'log') {
+        logBox.insertAdjacentText('beforeend', msg.text + '\n');
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+      if (msg.type === 'reset_done' || msg.type === 'balance_done') {
+        htmx.trigger('#camera-panel', 'refreshPanel');
+      }
+      if (msg.type === 'camera_connected') {
+        ndiSyncConnect(msg.ip);
+      }
+      if (msg.type === 'camera_disconnected') {
+        ndiSyncDisconnect();
+      }
+    };
+    ws.onclose = () => { setTimeout(connect, 2000); };
+    ws.onerror = () => { ws.close(); };
+  }
+  connect();
+})();
+</script>
+
+</body>
+</html>

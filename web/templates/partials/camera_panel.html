@@ -1,0 +1,217 @@
+<div id="camera-panel"
+     hx-get="/api/camera/panel"
+     hx-trigger="refreshPanel from:body"
+     hx-swap="outerHTML">
+
+  <section class="panel">
+    <h2 class="panel-title">Camera</h2>
+
+    <!-- Error banner -->
+    {% if error is defined and error %}
+    <div class="banner banner-error">{{ error }}</div>
+    {% endif %}
+
+    <!-- Connection row -->
+    <div class="form-row">
+      <label class="form-label">IP</label>
+      <input id="cam-ip" class="input" type="text" name="ip"
+             value="{{ session.ip or '' }}" placeholder="192.168.0.10"
+             {% if session.connected %}disabled{% endif %}>
+
+      <label class="form-label">Port</label>
+      <input id="cam-port" class="input input-short" type="text" name="port"
+             value="{{ session.port or '80' }}" placeholder="80"
+             {% if session.connected %}disabled{% endif %}>
+
+      <button class="btn"
+              hx-post="/api/camera/scan"
+              hx-target="#camera-panel"
+              hx-swap="outerHTML"
+              hx-indicator="#scan-indicator"
+              {% if session.connected or session.scan_in_progress %}disabled{% endif %}>
+        {% if session.scan_in_progress %}Scanning…{% else %}Scan Network{% endif %}
+      </button>
+      <span id="scan-indicator" class="htmx-indicator spinner"></span>
+    </div>
+
+    <!-- Discovered cameras dropdown -->
+    {% if session.discovered_cameras %}
+    <div class="form-row">
+      <label class="form-label">Discovered</label>
+      <select id="discovered-select" class="input select-wide"
+              onchange="applyDiscovered(this.value)">
+        <option value="">— select —</option>
+        {% for cam in session.discovered_cameras %}
+        <option value="{{ cam.ip }}|{{ cam.port }}">{{ cam.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <!-- Status row -->
+    <div class="status-row">
+      <span class="status-dot {{ 'connected' if session.connected else 'disconnected' }}"></span>
+      {% if session.connected %}
+        <span>Connected: <strong>{{ session.camera_id }}</strong> — {{ session.ip }}:{{ session.port }}</span>
+      {% else %}
+        <span>Not connected</span>
+      {% endif %}
+    </div>
+
+    <!-- Connect / Disconnect / Reset -->
+    <div class="btn-row">
+      {% if not session.connected %}
+      <button class="btn btn-primary"
+              hx-post="/api/camera/connect"
+              hx-vals='js:{ip: document.getElementById("cam-ip").value, port: document.getElementById("cam-port").value}'
+              hx-target="#camera-panel"
+              hx-swap="outerHTML"
+              hx-indicator="#connect-indicator"
+              {% if session.connect_in_progress %}disabled{% endif %}>
+        {% if session.connect_in_progress %}Connecting…{% else %}Connect{% endif %}
+      </button>
+      <span id="connect-indicator" class="htmx-indicator spinner"></span>
+      {% else %}
+      <button class="btn btn-secondary"
+              hx-post="/api/camera/disconnect"
+              hx-target="#camera-panel"
+              hx-swap="outerHTML">
+        Disconnect
+      </button>
+      {% endif %}
+
+      <!-- Reset Camera — immer sichtbar, rot wenn verbunden (wie V23) -->
+      <button class="btn {{ 'btn-reset-active' if session.connected else 'btn-reset-inactive' }}"
+              hx-post="/api/camera/reset"
+              hx-target="#camera-panel"
+              hx-swap="outerHTML"
+              hx-confirm="Start full reset sequence?"
+              {% if not session.connected or session.reset_in_progress %}disabled{% endif %}>
+        {% if session.reset_in_progress %}Resetting…{% else %}Reset Camera{% endif %}
+      </button>
+    </div>
+
+    <!-- Advanced controls — always visible, disabled when not connected -->
+    <hr class="divider">
+    <h3 class="section-title">Advanced Controls</h3>
+    {% if session.connected %}{% set adv_disabled = false %}{% else %}{% set adv_disabled = true %}{% endif %}
+
+    {% set panasonic_dd = {
+      'gamma':        (session.gamma_command_map,   session.gamma_selection),
+      'color_temp':   (session.c_temp_command_map,  session.c_temp_selection),
+      'linear_matrix':(session.lmatrix_command_map, session.lmatrix_selection),
+    } %}
+
+    <div class="advanced-grid">
+      {% for row in ui_layout %}
+        {% set btn1, btn2, btn3, dd_key = row[0], row[1], row[2], row[3] %}
+        {% set pan = panasonic_dd.get(dd_key) if dd_key else none %}
+        {% set dd_sel = pan[1] if pan else (session.dropdown_selections.get(dd_key, '') if dd_key else '') %}
+        {% set dd_options = ui_dropdowns.get(dd_key, []) if dd_key else [] %}
+        {% set dd_map = pan[0] if pan else dd_options %}
+
+        <div class="adv-row">
+          {% for key in [btn1, btn2, btn3] %}
+            {% if key and key in ui_buttons %}
+              {% set btn_def = ui_buttons[key] %}
+              {% set label = ui_button_labels.get(key, key | replace('_', ' ') | title) %}
+              {% if 'on' in btn_def %}
+                {# Toggle button #}
+                {% set enabled = session.feature_states.get(key, False) %}
+                {% set has_dd_sync = key in ui_dropdowns_sync %}
+                <button id="feature-{{ key }}"
+                        class="btn btn-feature {{ 'active' if (enabled and session.connected) else '' }}"
+                        hx-post="/api/camera/feature/{{ key }}"
+                        hx-vals='{"enabled": "{{ 'false' if enabled else 'true' }}"}'
+                        hx-target="{{ '#camera-panel' if has_dd_sync else '#feature-' + key }}"
+                        hx-swap="outerHTML"
+                        {% if adv_disabled %}disabled{% endif %}>
+                  {{ label }} {{ 'ON' if enabled else 'OFF' }}
+                </button>
+              {% elif 'cmd' in btn_def %}
+                {# Trigger button — enabled only when condition is met #}
+                {% set cond = ui_button_conditions.get(key) %}
+                {% if cond %}
+                  {% set cond_met = session.dropdown_selections.get(cond.dropdown, '') == cond.value %}
+                {% else %}
+                  {% set cond_met = true %}
+                {% endif %}
+                <button id="trigger-{{ key }}"
+                        class="btn btn-feature"
+                        hx-post="/api/camera/trigger/{{ key }}"
+                        hx-target="#camera-panel"
+                        hx-swap="outerHTML"
+                        {% if adv_disabled or not cond_met %}disabled{% endif %}>
+                  {{ label }}
+                </button>
+              {% else %}
+                <span></span>
+              {% endif %}
+            {% else %}
+              <span></span>
+            {% endif %}
+          {% endfor %}
+
+          {% if dd_map %}
+          <select name="label"
+                  class="input select-dropdown"
+                  hx-post="/api/camera/dropdown/{{ dd_key }}"
+                  hx-target="#camera-panel"
+                  hx-swap="outerHTML"
+                  hx-trigger="change"
+                  hx-include="this"
+                  {% if adv_disabled %}disabled{% endif %}>
+            {% if not dd_sel %}<option value="">— {{ dd_key | replace('_',' ') | title }} —</option>{% endif %}
+            {% for opt_label, opt_cmd in dd_options %}
+              {% if opt_cmd is not none %}
+              <option value="{{ opt_label }}" {{ 'selected' if opt_label == dd_sel else '' }}>{{ opt_label }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          {% else %}
+          <span></span>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      <!-- Balance buttons — only rendered if defined in the module -->
+      {% if 'awb_black' in ui_buttons or 'aww_white' in ui_buttons %}
+      <div class="adv-row">
+        <span></span>
+        {% if 'awb_black' in ui_buttons %}
+        <button class="btn btn-balance"
+                hx-post="/api/camera/balance/awb_black"
+                hx-target="#camera-panel"
+                hx-swap="outerHTML"
+                {% if adv_disabled or session.balance_in_progress %}disabled{% endif %}>
+          {% if session.balance_in_progress %}Please Wait…{% else %}{{ ui_button_labels.get('awb_black', 'ABB (Black)') }}{% endif %}
+        </button>
+        {% endif %}
+        {% if 'aww_white' in ui_buttons %}
+        <button class="btn btn-balance"
+                hx-post="/api/camera/balance/aww_white"
+                hx-target="#camera-panel"
+                hx-swap="outerHTML"
+                {% if adv_disabled or session.balance_in_progress %}disabled{% endif %}>
+          {% if session.balance_in_progress %}Please Wait…{% else %}{{ ui_button_labels.get('aww_white', 'AWW (White)') }}{% endif %}
+        </button>
+        {% endif %}
+        <span></span>
+      </div>
+      {% endif %}
+
+    </div>
+  </section>
+
+</div>
+
+<script>
+function applyDiscovered(val) {
+  if (!val) return;
+  const [ip, port] = val.split('|');
+  const ipEl = document.getElementById('cam-ip');
+  const portEl = document.getElementById('cam-port');
+  if (ipEl) ipEl.value = ip;
+  if (portEl) portEl.value = port;
+}
+</script>

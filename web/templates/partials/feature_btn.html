@@ -1,0 +1,8 @@
+<button id="feature-{{ key }}"
+        class="btn btn-feature {{ 'active' if enabled else '' }}"
+        hx-post="/api/camera/feature/{{ key }}"
+        hx-vals='{"enabled": "{{ 'false' if enabled else 'true' }}"}'
+        hx-target="#feature-{{ key }}"
+        hx-swap="outerHTML">
+  {{ key | replace('_', ' ') | title }} {{ 'ON' if enabled else 'OFF' }}
+</button>

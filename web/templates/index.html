@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="main-center">
+  {% include "partials/camera_panel.html" %}
+
+  <section class="log-section">
+    <div class="log-header">
+      <span>Operation Logs</span>
+      <button class="btn btn-sm" onclick="document.getElementById('log-box').textContent=''">Clear</button>
+    </div>
+    <pre id="log-box" class="log-box"></pre>
+  </section>
+</div>
+
+<div class="main-ndi">
+  <section class="panel ndi-monitor-panel">
+    <div class="panel-title">NDI Monitor</div>
+
+    <div class="ndi-sdk-warning" style="display:none"></div>
+
+    <div class="form-row">
+      <label class="toggle-row">
+        <input type="checkbox" id="ndi-sync-camera" onchange="ndiSyncToggle(this.checked)">
+        <span>Sync with camera</span>
+      </label>
+    </div>
+
+    <div class="form-row">
+      <select id="ndi-source-select" class="input select-wide">
+        <option value="">— select source —</option>
+      </select>
+      <button class="btn btn-sm" onclick="ndiRefreshSources()">Refresh</button>
+      <button id="ndi-toggle-btn" class="btn" onclick="ndiToggle()">Start</button>
+    </div>
+
+    <div class="form-row">
+      <label class="form-label">Waveform</label>
+      <select id="ndi-scope-mode" class="input" onchange="ndiSetMode(this.value)">
+        <option value="parade">RGB Parade</option>
+        <option value="overlay">RGB Overlay</option>
+        <option value="luma">Luma (Y)</option>
+      </select>
+    </div>
+
+    <div id="ndi-monitor-wrap" class="ndi-monitor-wrap" style="display:none">
+      <img id="ndi-frame" class="ndi-frame ndi-clickable" alt="NDI feed" onclick="ndiFullscreenOpen(1)">
+      <div id="ndi-status" class="ndi-status-badge">connecting…</div>
+    </div>
+
+    <div id="ndi-waveform-wrap" class="ndi-waveform-wrap" style="display:none">
+      <img id="ndi-waveform" class="ndi-waveform ndi-clickable" alt="Waveform" onclick="ndiFullscreenOpen(2)">
+      <div id="ndi-scope-label" class="ndi-scope-label">Waveform — RGB Parade</div>
+    </div>
+
+    <div id="ndi-vectorscope-wrap" class="ndi-vectorscope-wrap" style="display:none">
+      <img id="ndi-vectorscope" class="ndi-vectorscope ndi-clickable" alt="Vectorscope" onclick="ndiFullscreenOpen(3)">
+      <div class="ndi-scope-label">Vectorscope — YCbCr</div>
+    </div>
+
+    <p class="ndi-hint">
+      The first image takes <strong>3–4 seconds</strong> to appear while the NDI connection is established.<br>
+      New sources on the network are only detected after pressing <strong>Refresh</strong>.
+    </p>
+  </section>
+</div>
+
+{% endblock %}
