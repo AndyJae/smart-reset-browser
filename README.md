@@ -40,12 +40,27 @@ pip install -r requirements.txt
 ## Start
 
 ```bash
-python web_main.py
+py web_main.py
 ```
 
 The browser opens automatically at `http://localhost:8765`.
 
-> On Windows, use `py web_main.py` if `python` is not found.
+### Start with smart-matching plugin
+
+To enable the **Capture Training Sample** button (camera calibration data collection):
+
+```bat
+start_with_matching.bat
+```
+
+Or manually:
+
+```bat
+set SMART_RESET_PLUGIN=C:\smart-matching-local
+py web_main.py
+```
+
+See [smart-matching](https://github.com/AndyJae/smart-matching) for details.
 
 ---
 
@@ -70,7 +85,7 @@ The browser opens automatically at `http://localhost:8765`.
 ## NDI Monitor
 
 1. Enable NDI output on the camera
-2. Check **Sync with camera** to start/stop the feed automatically with the camera connection  
+2. Check **Link with camera** to start/stop the feed automatically with the camera connection  
    — or click **Refresh** then **Start** manually
 3. Choose waveform mode: **RGB Parade**, **RGB Overlay**, or **Luma (Y)**
 4. Click any image to open fullscreen
@@ -114,6 +129,7 @@ AK-UB300
 ```
 smart-reset-browser/
 ├── web_main.py              # Entry point: server + tray icon + browser
+├── start_with_matching.bat  # Launcher with smart-matching plugin active
 ├── requirements.txt
 │
 ├── core/                    # Manufacturer-agnostic interfaces and engine
@@ -129,7 +145,7 @@ smart-reset-browser/
 ├── lib/ndi/                 # Bundled NDI runtime DLL (Windows)
 │
 └── web/
-    ├── app.py               # FastAPI — all routes
+    ├── app.py               # FastAPI — all routes + plugin loader
     ├── ws_manager.py        # WebSocket manager
     ├── templates/           # Jinja2 templates
     └── static/              # CSS

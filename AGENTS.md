@@ -21,7 +21,14 @@ Browser-based PTZ camera reset, control, and NDI monitoring tool.
 web_main.py → uvicorn → web/app.py → camera_plugins/ + ndi/
                       ↕ WebSocket
                     browser (HTMX + Vanilla JS)
+
+Optional plugin (loaded via SMART_RESET_PLUGIN env var):
+    web/app.py on_startup → importlib → matching_plugin.router
 ```
+
+### Plugin loader
+
+`web/app.py` checks `SMART_RESET_PLUGIN` at startup. If set, it adds the path to `sys.path` and imports `matching_plugin`, mounting its FastAPI router on the app. The plugin accesses `app.state.session` and `app.state.registry` directly. No other changes to smart-reset internals.
 
 ### Key directories
 
@@ -80,6 +87,8 @@ web_main.py → uvicorn → web/app.py → camera_plugins/ + ndi/
 | `GET` | `/api/ndi/sources` | JSON | NDI sources |
 | `WS` | `/ws/logs` | WebSocket | Logs + events |
 | `WS` | `/ws/ndi` | WebSocket binary | NDI stream |
+| `GET` | `/api/matching/status` | JSON | Plugin health check (only if plugin loaded) |
+| `POST` | `/api/matching/capture` | JSON | Reset → grab → sample → save (only if plugin loaded) |
 
 ## WebSocket events
 
