@@ -50,7 +50,7 @@ The browser opens automatically at `http://localhost:8765`.
 To enable the **Capture Training Sample** button (camera calibration data collection):
 
 ```bat
-set SMART_RESET_PLUGIN=C:\smart-matching-local
+set SMART_RESET_PLUGIN=C:\smart-matching
 py web_main.py
 ```
 
