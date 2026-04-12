@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-echo === smart-matching build ===
+echo === smart-reset build ===
 echo.
 
 REM Check Python
@@ -29,7 +29,7 @@ if errorlevel 1 (
 
 REM Run PyInstaller
 echo [3/3] Building executable...
-pyinstaller smart_matching.spec --clean --noconfirm
+pyinstaller smart_reset.spec --clean --noconfirm
 if errorlevel 1 (
     echo.
     echo ERROR: PyInstaller build failed. See output above.
@@ -37,6 +37,6 @@ if errorlevel 1 (
 )
 
 echo.
-echo Build complete: dist\smart-matching.exe
+echo Build complete: dist\smart-reset.exe
 echo.
 pause

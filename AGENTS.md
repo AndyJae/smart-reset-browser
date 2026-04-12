@@ -11,8 +11,7 @@ Browser-based PTZ camera reset, control, and NDI monitoring tool.
 - NDI monitor: live video + waveform + vectorscope streamed via WebSocket
 - Can be bundled with PyInstaller into a single Windows executable
 
-**Scope of this repo:** Reset, control, and NDI display only.  
-Camera calibration / auto-matching is a separate private service (`smart-matching`).
+**Scope of this repo:** Reset, control, and NDI display only.
 
 ---
 

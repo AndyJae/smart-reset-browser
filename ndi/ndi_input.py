@@ -223,7 +223,7 @@ def grab_frame(ndi_name: str, timeout_ms: int = 5000) -> np.ndarray:
         color_format=_NDIlib_recv_color_format_RGBX_RGBA,
         bandwidth=_NDIlib_recv_bandwidth_highest,
         allow_video_fields=False,
-        p_ndi_recv_name=b"smart-matching",
+        p_ndi_recv_name=b"smart-reset",
     )
 
     receiver = _lib.NDIlib_recv_create_v3(ctypes.byref(create))
@@ -306,7 +306,7 @@ class NDIFrameStream:
             color_format=_NDIlib_recv_color_format_RGBX_RGBA,
             bandwidth=_NDIlib_recv_bandwidth_highest,
             allow_video_fields=False,
-            p_ndi_recv_name=b"smart-matching-monitor",
+            p_ndi_recv_name=b"smart-reset-monitor",
         )
         self._receiver = _lib.NDIlib_recv_create_v3(ctypes.byref(create))
         if not self._receiver:

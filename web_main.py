@@ -15,7 +15,7 @@ from PIL import Image
 # performing a runtime string-based import inside a frozen bundle.
 from web.app import app  # noqa: E402
 
-_MUTEX_NAME = "Global\\SmartMatchingApp_SingleInstance"
+_MUTEX_NAME = "Global\\SmartResetApp_SingleInstance"
 
 
 def _ensure_single_instance():
@@ -28,7 +28,7 @@ def _ensure_single_instance():
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         ctypes.windll.user32.MessageBoxW(
             None,
-            "Smart Matching is already running.\nCheck the system tray.",
+            "Smart Reset is already running.\nCheck the system tray.",
             "Already Running",
             0x40 | 0x1000,  # MB_ICONINFORMATION | MB_SYSTEMMODAL
         )
@@ -84,9 +84,9 @@ def main():
         icon.stop()
 
     tray = pystray.Icon(
-        "smart-matching",
+        "smart-reset",
         _load_tray_image(),
-        "smart-matching",
+        "smart-reset",
         menu=pystray.Menu(
             pystray.MenuItem("Open", on_open, default=True),
             pystray.MenuItem("Quit", on_quit),

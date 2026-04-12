@@ -255,5 +255,5 @@ Enabling shows a popup with the exact path and a mailto link to support.
 
 - `sys.frozen` check in startup — explicit module name lists for `camera_plugins/`
 - Templates, static files, and `lib/ndi/` embedded via `--add-data`
-- Single-instance enforced via Windows named mutex (`Global\SmartMatchingApp_SingleInstance`)
+- Single-instance enforced via Windows named mutex
 - System tray via `pystray`; stdout/stderr redirected to `/dev/null` when frozen
