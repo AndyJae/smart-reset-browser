@@ -385,6 +385,30 @@ if (document.getElementById('ndi-source-select')) ndiRefreshSources();
   }).catch(() => {});
 })();
 
+async function matchingCorrect() {
+  const source = document.getElementById('ndi-source-select')?.value;
+  if (!source) { alert('Select an NDI source first.'); return; }
+  const btn = document.getElementById('matching-correct-btn');
+  const status = document.getElementById('matching-capture-status');
+  btn.disabled = true;
+  status.textContent = 'matching…';
+  try {
+    const fd = new FormData();
+    fd.append('ndi_source', source);
+    const resp = await fetch('/api/matching/correct', {method: 'POST', body: fd});
+    const data = await resp.json();
+    if (data.ok) {
+      status.textContent = `done: ${data.iterations} iteration(s), converged: ${data.converged}`;
+    } else {
+      status.textContent = `error: ${data.error}`;
+    }
+  } catch(e) {
+    status.textContent = `error: ${e}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function matchingCapture() {
   const source = document.getElementById('ndi-source-select')?.value;
   if (!source) { alert('Select an NDI source first.'); return; }
