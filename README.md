@@ -50,12 +50,6 @@ The browser opens automatically at `http://localhost:8765`.
 To enable the **Capture Training Sample** button (camera calibration data collection):
 
 ```bat
-start_with_matching.bat
-```
-
-Or manually:
-
-```bat
 set SMART_RESET_PLUGIN=C:\smart-matching-local
 py web_main.py
 ```
@@ -129,7 +123,6 @@ AK-UB300
 ```
 smart-reset-browser/
 ├── web_main.py              # Entry point: server + tray icon + browser
-├── start_with_matching.bat  # Launcher with smart-matching plugin active
 ├── requirements.txt
 │
 ├── core/                    # Manufacturer-agnostic interfaces and engine
