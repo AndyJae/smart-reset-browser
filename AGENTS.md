@@ -114,6 +114,9 @@ Optional plugin (loaded via SMART_RESET_PLUGIN env var):
 8. No new dependencies without clear need.
 9. `camera_panel.html` renders as a complete fragment with `id="camera-panel"` — no double wrapper.
 10. No `setTimeout` or client polling — real-time via WebSocket only.
+11. A connect attempt that identifies a camera model not present in the registry must return an error and leave the session disconnected — never set `connected = True` with `module = None` (except the BirdDog generic fallback).
+12. Background workers that write to `CameraSession` must capture `expected_sid`, `ip`, and `port` before entering the executor and abort if `session.connected`, `session.session_id`, or `session.ip/port` no longer match.
+13. Any route that resolves a transport must guard `if transport is None` before calling `transport.send_command()`.
 
 ---
 

@@ -72,9 +72,6 @@ class PluginRegistry:
             )
             return
 
-        if camera_id in self._modules:
-            pass  # plugins intentionally overwrite legacy camera_types/ entries
-
         self._modules[camera_id] = module
         logger.debug(f"Registered module: {camera_id} → {module.__name__}")
 

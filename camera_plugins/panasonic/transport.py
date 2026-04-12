@@ -4,7 +4,7 @@ camera_plugins/panasonic/transport.py — Panasonic CGI Transport-Implementierun
 Implementiert CameraProtocol für das Panasonic CGI-Protokoll:
   - HTTP GET auf /cgi-bin/aw_cam?<command>
   - Fehlerformat: Response beginnt mit ER1:, ER2:, ER3:
-  - Modell-Erkennung: Regex AW-[A-Z0-9]+ auf QID-Antwort
+  - Modell-Erkennung: Regex (AW|AK)-[A-Z0-9]+ auf QID-Antwort (z. B. AW-UE160, AK-UB300)
   - Discovery: UDP-Broadcast (delegiert an smart_reset/discovery.py)
 
 Für Discovery wird der bestehende Code in smart_reset/discovery.py wiederverwendet —
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MODEL_REGEX = re.compile(r"AW-[A-Z0-9]+")
+_MODEL_REGEX = re.compile(r"(?:AW|AK)-[A-Z0-9]+")
 _ERROR_PREFIXES = ("ER1:", "ER2:", "ER3:")
 _DEFAULT_TIMEOUT = 3.0
 
@@ -107,7 +107,7 @@ class PanasonicTransport(CameraProtocol):
         Extrahiert die Modellbezeichnung aus einem QID-Response-Body.
 
         Panasonic QID-Antwort enthält die Modellbezeichnung als Token
-        nach dem Muster AW-[A-Z0-9]+ (z. B. "AW-UE160", "AW-UE150A").
+        nach dem Muster (AW|AK)-[A-Z0-9]+ (z. B. "AW-UE160", "AW-UE150A", "AK-UB300").
 
         Gibt None zurück wenn kein passendes Token gefunden wird.
         """

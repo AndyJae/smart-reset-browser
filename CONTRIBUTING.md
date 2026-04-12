@@ -13,12 +13,13 @@
 
 ### Panasonic
 
-1. Copy `camera_plugins/panasonic/aw_ue80.py` as a starting point
-2. Set `CAMERA_ID`, `DISPLAY_NAME`, and `PROTOCOL = "panasonic"`
-3. Define `RESET_SEQUENCE` — ordered list of CGI commands
-4. Define `UI_BUTTONS`, `UI_DROPDOWNS`, `UI_LAYOUT` for the controls panel
-5. Add `CAMERA_ID_ALIASES` if the camera responds with multiple model strings
-6. Test against real hardware — no emulator exists
+1. Copy `camera_plugins/panasonic/aw_ue80.py` as a starting point (AW-series) or `camera_plugins/panasonic/ak_ub300.py` (AK-series)
+2. Name the file with the matching prefix: `aw_<model>.py` or `ak_<model>.py` — the loader filters by prefix
+3. Set `CAMERA_ID`, `DISPLAY_NAME`, and `PROTOCOL = "panasonic"`
+4. Define `RESET_COMMANDS` — ordered list of CGI commands
+5. Define `UI_BUTTONS`, `UI_DROPDOWNS`, `UI_LAYOUT` for the controls panel
+6. Add `CAMERA_ID_ALIASES` if the camera responds with multiple model strings
+7. Test against real hardware — no emulator exists
 
 ### BirdDog
 

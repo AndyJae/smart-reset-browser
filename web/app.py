@@ -56,18 +56,24 @@ async def on_startup():
     # When running as a PyInstaller frozen bundle pkgutil.iter_modules() cannot
     # walk the embedded archive, so we provide the full module name list explicitly.
     _frozen = getattr(_sys, "frozen", False)
-    _panasonic_modules = [
+    _panasonic_aw_modules = [
         "aw_he120", "aw_he130", "aw_he40", "aw_he42", "aw_he50", "aw_he60",
         "aw_hr140", "aw_ue100", "aw_ue145", "aw_ue150", "aw_ue160",
         "aw_ue30", "aw_ue40", "aw_ue50", "aw_ue70", "aw_ue80",
     ]
+    _panasonic_ak_modules = ["ak_ub300"]
     _birddog_modules = ["p100", "p110", "p200", "p240", "p4k", "p_generic"]
 
     registry = PluginRegistry()
     registry.load_package(
         "camera_plugins.panasonic",
         module_prefix="aw_",
-        frozen_names=_panasonic_modules if _frozen else None,
+        frozen_names=_panasonic_aw_modules if _frozen else None,
+    )
+    registry.load_package(
+        "camera_plugins.panasonic",
+        module_prefix="ak_",
+        frozen_names=_panasonic_ak_modules if _frozen else None,
     )
     registry.load_package(
         "camera_plugins.birddog",
@@ -179,6 +185,9 @@ def _do_reset(session, module, registry: PluginRegistry, sid, ip, port) -> dict:
     """
     if _is_plugin_module(module):
         transport = registry.resolve_transport_for_module(module)
+        if transport is None:
+            camera_id = getattr(module, "CAMERA_ID", module.__name__)
+            raise RuntimeError(f"No transport registered for camera '{camera_id}' — cannot reset.")
         engine = ResetEngine(module, transport, session, sid, ip, port)
         result = engine.run()
         return result.to_ws_event()
@@ -194,8 +203,24 @@ def _do_reset(session, module, registry: PluginRegistry, sid, ip, port) -> dict:
     }
 
 
-def _sync_feature_states(session: CameraSession, module, ip: str, port: str, registry=None):
-    """Query all feature states from camera and populate session. Runs in executor."""
+def _sync_feature_states(
+    session: CameraSession,
+    module,
+    ip: str,
+    port: str,
+    registry=None,
+    *,
+    expected_sid: int,
+):
+    """Query all feature states from camera and populate session. Runs in executor.
+
+    expected_sid, ip, and port must be captured by the caller before submitting to
+    the executor.  Any write is aborted if the session is disconnected, has moved on
+    to a different connection (session_id mismatch), or is now targeting a different
+    address (covers the session_id-reuse edge case where disconnect → reconnect to a
+    new camera bumps session_id back to a value that matches expected_sid).
+    """
+    sid = expected_sid
     feature_queries = getattr(module, "UI_FEATURE_QUERIES", {})
 
     if _is_plugin_module(module):
@@ -210,6 +235,8 @@ def _sync_feature_states(session: CameraSession, module, ip: str, port: str, reg
                 data = _json.loads(body)
             except Exception:
                 continue
+            if not session.connected or session.session_id != sid or session.ip != ip or session.port != port:
+                return
             field, value_map = response_map.get(key, (None, {}))
             if field and field in data:
                 session.feature_states[key] = value_map.get(data[field], False)
@@ -225,12 +252,20 @@ def _sync_feature_states(session: CameraSession, module, ip: str, port: str, reg
                 data = _json.loads(body)
             except Exception:
                 continue
+            if not session.connected or session.session_id != sid or session.ip != ip or session.port != port:
+                return
             field, value_map = dropdown_response_map.get(key, (None, {}))
             if field and field in data:
                 session.dropdown_selections[key] = value_map.get(data[field], "")
         return
 
+    # Legacy (non-plugin) path — unreachable for current camera_plugins modules.
+    # Guards match the plugin path so the race cannot re-emerge if this is revived.
+    def _stale() -> bool:
+        return not session.connected or session.session_id != sid or session.ip != ip or session.port != port
     for key, query in feature_queries.items():
+        if _stale():
+            return
         resp = send_command(f"cmd={query}&res=1", ip, port)
         if resp is None or resp.status_code != 200:
             continue
@@ -253,6 +288,8 @@ def _sync_feature_states(session: CameraSession, module, ip: str, port: str, reg
         "linear_matrix": "lmatrix_selection",
     }
     for key, query in dropdown_queries.items():
+        if _stale():
+            return
         resp = send_command(f"cmd={query}&res=1", ip, port)
         if resp is None or resp.status_code != 200:
             continue
@@ -419,7 +456,10 @@ async def connect_camera(request: Request):
             camera_id = "_BirdDog_Generic"
             module = _registry(request).resolve_module(camera_id)
         else:
-            logging.warning(f"Connected but unknown camera ID: {camera_id}")
+            logging.warning(f"Camera identified as '{camera_id}' but no module registered — refusing connect.")
+            session.ip = ""
+            session.port = "80"
+            return _render_panel(request, error=f"Unrecognised camera model: {camera_id}")
 
     # Correct port to the transport's API port (e.g. BirdDog API is on 8080,
     # not 80 — so if the user typed 80 we fix it here before storing it).
@@ -438,9 +478,10 @@ async def connect_camera(request: Request):
 
     if module:
         _reg = _registry(request)
+        _sid = session.session_id
         def _do_sync():
-            _sync_feature_states(session, module, ip, port, registry=_reg)
-        asyncio.get_event_loop().run_in_executor(_executor, _do_sync)
+            _sync_feature_states(session, module, ip, port, registry=_reg, expected_sid=_sid)
+        asyncio.get_running_loop().run_in_executor(_executor, _do_sync)
 
     await ws_manager.broadcast_json({"type": "camera_connected", "ip": ip, "camera_id": camera_id})
     return _render_panel(request)
@@ -511,7 +552,7 @@ async def start_reset(request: Request):
             # Re-sync UI state from camera so dropdowns/buttons reflect reset values.
             await loop.run_in_executor(
                 _executor,
-                lambda: _sync_feature_states(session, module, ip, port, registry=registry),
+                lambda: _sync_feature_states(session, module, ip, port, registry=registry, expected_sid=sid),
             )
             await ws_manager.broadcast_json(event)
         except Exception as exc:
@@ -618,6 +659,9 @@ async def trigger_action(request: Request, key: str):
         transport = _registry(request).resolve_transport_for_module(module)
 
         def _run():
+            if transport is None:
+                logging.error(f"[{key}] trigger: no transport available.")
+                return
             try:
                 transport.send_command(ip, port, cmd)
                 logging.info(f"[{key}] trigger sent.")
@@ -660,6 +704,9 @@ async def set_dropdown(request: Request, key: str):
         transport = _registry(request).resolve_transport_for_module(module)
 
         def _plugin_dropdown():
+            if transport is None:
+                logging.error(f"Dropdown [{key}]: no transport available.")
+                return False
             try:
                 transport.send_command(ip, port, cmd)
                 return True

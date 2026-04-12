@@ -1,6 +1,6 @@
 # DOKU — smart-reset-browser
 
-**Last updated:** 2026-04-11
+**Last updated:** 2026-04-12
 
 Technical architecture and implementation reference.
 
@@ -34,9 +34,10 @@ smart-reset-browser/
 │
 ├── camera_plugins/
 │   ├── panasonic/
-│   │   ├── transport.py     # HTTP CGI, UDP discovery, model detection
+│   │   ├── transport.py     # HTTP CGI, UDP discovery, model detection (AW- and AK- series)
 │   │   ├── base.py          # Shared helpers
-│   │   └── aw_*.py          # Per-model reset modules
+│   │   ├── aw_*.py          # Per-model reset modules (AW- series)
+│   │   └── ak_*.py          # Per-model reset modules (AK- series)
 │   └── birddog/
 │       ├── transport.py     # REST/JSON, parallel subnet scan, port 8080
 │       ├── base.py          # Shared helpers
@@ -209,6 +210,8 @@ Client sends plain text (`"parade"` / `"overlay"` / `"luma"`) to switch waveform
 1. `POST /api/camera/connect`
 2. All transports attempt `query_camera_id(ip, port)` in parallel
 3. First response wins — camera module loaded from `PluginRegistry`
+   - Unknown BirdDog model → falls back to `_BirdDog_Generic`
+   - Unknown Panasonic model → returns an error; session stays disconnected
 4. Port corrected for transport if needed (BirdDog: 8080)
 5. `_sync_feature_states()` polls all feature/dropdown states in executor
 6. `camera_connected` WS event broadcast
@@ -228,7 +231,7 @@ Client sends plain text (`"parade"` / `"overlay"` / `"luma"`) to switch waveform
 - **Asyncio event loop** — FastAPI routes, WebSocket, state mutations
 - **ThreadPoolExecutor** (`_executor`, 4 workers) — all blocking I/O (HTTP, UDP, NDI)
 - **Thread → loop callbacks** — `ws_manager.broadcast_from_thread()` via `asyncio.run_coroutine_threadsafe()`
-- **Stale worker protection** — `session_id` checked before state mutations in workers
+- **Stale worker protection** — `session_id`, `connected`, and `ip/port` all checked before state mutations in background workers; `expected_sid` is captured by the caller before submitting to the executor so the check cannot drift
 
 ---
 
@@ -253,7 +256,7 @@ Enabling shows a popup with the exact path and a mailto link to support.
 
 ## PyInstaller Notes
 
-- `sys.frozen` check in startup — explicit module name lists for `camera_plugins/`
+- `sys.frozen` check in startup — explicit module name lists for `camera_plugins/`; Panasonic loaded in two passes (`aw_*` and `ak_*`)
 - Templates, static files, and `lib/ndi/` embedded via `--add-data`
 - Single-instance enforced via Windows named mutex
 - System tray via `pystray`; stdout/stderr redirected to `/dev/null` when frozen
