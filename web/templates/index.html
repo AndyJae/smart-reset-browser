@@ -22,7 +22,7 @@
     <div class="form-row">
       <label class="toggle-row">
         <input type="checkbox" id="ndi-sync-camera" onchange="ndiSyncToggle(this.checked)">
-        <span>Sync with camera</span>
+        <span>Link with camera</span>
       </label>
     </div>
 
@@ -32,6 +32,11 @@
       </select>
       <button class="btn btn-sm" onclick="ndiRefreshSources()">Refresh</button>
       <button id="ndi-toggle-btn" class="btn" onclick="ndiToggle()">Start</button>
+    </div>
+
+    <div class="form-row" id="matching-capture-row" style="display:none">
+      <button class="btn" id="matching-capture-btn" onclick="matchingCapture()">Capture Training Sample</button>
+      <span id="matching-capture-status" style="font-size:0.85rem;opacity:0.7;margin-left:0.5rem"></span>
     </div>
 
     <div class="form-row">

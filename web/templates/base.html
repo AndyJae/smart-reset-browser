@@ -97,7 +97,7 @@
       <p>The NDI Monitor displays a live video feed, waveform, and vectorscope directly in the browser.
       NDI output must be enabled on the camera.</p>
 
-      <p><strong>Sync with camera</strong> — when checked, the NDI feed starts automatically
+      <p><strong>Link with camera</strong> — when checked, the NDI feed starts automatically
       when the camera connects and stops when it disconnects. The tool refreshes the source list
       and selects the matching feed by camera IP. The dropdown remains usable at all times.</p>
 
@@ -374,6 +374,40 @@ function ndiStop() {
 
 // Auto-populate sources on page load if monitor panel is present
 if (document.getElementById('ndi-source-select')) ndiRefreshSources();
+
+// ---------- Matching plugin ----------
+(function() {
+  fetch('/api/matching/status').then(r => {
+    if (r.ok) {
+      const row = document.getElementById('matching-capture-row');
+      if (row) row.style.display = '';
+    }
+  }).catch(() => {});
+})();
+
+async function matchingCapture() {
+  const source = document.getElementById('ndi-source-select')?.value;
+  if (!source) { alert('Select an NDI source first.'); return; }
+  const btn = document.getElementById('matching-capture-btn');
+  const status = document.getElementById('matching-capture-status');
+  btn.disabled = true;
+  status.textContent = 'resetting + capturing…';
+  try {
+    const fd = new FormData();
+    fd.append('ndi_source', source);
+    const resp = await fetch('/api/matching/capture', {method: 'POST', body: fd});
+    const data = await resp.json();
+    if (data.ok) {
+      status.textContent = `saved: ${data.sample_id} (${data.patches} patches)`;
+    } else {
+      status.textContent = `error: ${data.error}`;
+    }
+  } catch(e) {
+    status.textContent = `error: ${e}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 // Restore NDI sync checkbox state from localStorage
 (function() {

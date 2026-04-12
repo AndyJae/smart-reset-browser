@@ -87,6 +87,20 @@ async def on_startup():
     logging.info(f"Loaded {len(ids)} camera model(s): {', '.join(display_names)}")
     logging.info(f"Registered transports: {list(registry.all_transports().keys())}")
 
+    # Load optional extension plugin (e.g. smart-matching)
+    import importlib, os as _os, sys as _sys
+    _plugin_path = _os.environ.get("SMART_RESET_PLUGIN", "").strip()
+    if _plugin_path:
+        if _plugin_path not in _sys.path:
+            _sys.path.insert(0, _plugin_path)
+        try:
+            _plug = importlib.import_module("matching_plugin")
+            if hasattr(_plug, "router"):
+                app.include_router(_plug.router)
+                logging.info(f"Plugin loaded: matching_plugin from {_plugin_path}")
+        except Exception as _exc:
+            logging.warning(f"Plugin load skipped: {_exc}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
