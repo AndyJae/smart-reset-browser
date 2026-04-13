@@ -153,4 +153,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-© medien-support.com — All rights reserved.
+Licensed under the [Apache License 2.0](LICENSE) — © 2026 medien-support.com

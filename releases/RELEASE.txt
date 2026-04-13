@@ -95,5 +95,5 @@ NOTES
 ------------------------------------------------------
 LICENSE
 ------------------------------------------------------
-© medien-support.com — All rights reserved.
-Unauthorised distribution or modification is prohibited.
+Licensed under the Apache License 2.0
+© 2026 medien-support.com — see LICENSE for full terms.
