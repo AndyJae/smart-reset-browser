@@ -7,6 +7,8 @@
 - Improved network discovery
 - Documentation corrections
 
+Developers are encouraged to contribute new ideas and actively help shape the direction of the project.
+
 ---
 
 ## Adding a camera model
