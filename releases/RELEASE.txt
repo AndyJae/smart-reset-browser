@@ -1,0 +1,99 @@
+smart-reset-browser
+Browser-based PTZ Camera Reset, Control & NDI Monitor
+======================================================
+
+Release Date : 2026-04-13
+Build        : a37de61
+Platform     : Windows (x64)
+
+------------------------------------------------------
+ABOUT
+------------------------------------------------------
+smart-reset-browser is a fully local, browser-based tool for
+controlling and resetting PTZ cameras on a LAN. No cloud, no
+installer dependencies beyond the bundled executable.
+
+The browser is the UI — it opens automatically on launch.
+
+------------------------------------------------------
+WHAT'S INCLUDED
+------------------------------------------------------
+  smart-reset-browser.exe   — single-file executable (this release)
+  RELEASE.txt               — this file
+
+The NDI runtime (Processing.NDI.Lib.x64.dll) is bundled inside
+the executable. No separate NDI SDK installation is required.
+
+------------------------------------------------------
+FEATURES
+------------------------------------------------------
+Camera Management
+  - Auto-discovery of Panasonic cameras (UDP broadcast) and
+    BirdDog cameras (HTTP scan) on the local network
+  - Automatic model detection on connect
+  - Full reset sequence with post-reset UI re-sync
+  - ABB (automatic black balance) and AWW (automatic white balance)
+  - Feature toggles: Auto Focus, Auto Iris, Gamma, Matrix, etc.
+  - Dropdowns: Exposure mode, White Balance, Color Temp, etc.
+  - Trigger buttons (active only when the related mode is selected)
+  - Open camera web GUI directly from the tool
+  - File logging to ~/smart-reset.log
+
+NDI Monitor
+  - Live NDI video feed in the browser
+  - Waveform monitor: RGB Parade, RGB Overlay, Luma (Y) — BT.709
+  - Vectorscope: YCbCr BT.709 with 75 % colour-bar target boxes
+  - Graticule at 0 / 25 / 50 / 75 / 100 IRE
+  - Fullscreen view on click
+  - Link with camera: feed starts/stops with camera connection
+
+------------------------------------------------------
+SUPPORTED CAMERAS
+------------------------------------------------------
+Panasonic
+  AW-UE30 / UE40 / UE50 / UE70 / UE80 / UE100 / UE145 / UE150A / UE160
+  AW-HE40 / HE42 / HE50 / HE60 / HE120 / HE130 / HR140
+  AK-UB300
+
+BirdDog
+  P200 / A200 / A300   — full colour matrix (14 params)
+  P100 / PF120         — colour matrix (12 params)
+  P110 / P120          — colour matrix (12 params)
+  P4k / P400 / P240    — no colour matrix
+  Any other BirdDog    — generic fallback
+
+------------------------------------------------------
+REQUIREMENTS
+------------------------------------------------------
+  - Windows 10 or Windows 11 (x64)
+  - Network access to the camera (same LAN)
+  - NDI output enabled on the camera (for NDI Monitor only)
+  - No Python installation required — fully self-contained
+
+------------------------------------------------------
+USAGE
+------------------------------------------------------
+  1. Double-click smart-reset-browser.exe
+  2. The browser opens automatically at http://localhost:8765
+  3. Click "Scan Network" to discover cameras
+  4. Select a camera and click "Connect"
+  5. Use the controls to reset or adjust the camera
+  6. For NDI Monitor: enable NDI on the camera, then use the
+     NDI Monitor panel — check "Link with camera" for auto-start
+
+  To quit: right-click the tray icon and choose Exit,
+           or close the terminal window.
+
+------------------------------------------------------
+NOTES
+------------------------------------------------------
+  - First NDI frame takes 3–4 seconds (normal connection negotiation)
+  - Waveform and vectorscope are computed in BT.709 colour space
+  - NDI Monitor is Windows-only; reset/control is cross-platform
+    in source builds but this exe targets Windows only
+
+------------------------------------------------------
+LICENSE
+------------------------------------------------------
+© medien-support.com — All rights reserved.
+Unauthorised distribution or modification is prohibited.
