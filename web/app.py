@@ -93,7 +93,7 @@ async def on_startup():
     logging.info(f"Loaded {len(ids)} camera model(s): {', '.join(display_names)}")
     logging.info(f"Registered transports: {list(registry.all_transports().keys())}")
 
-    # Load optional extension plugin (e.g. smart-matching)
+    # Load optional extension plugin
     import importlib, os as _os, sys as _sys
     _plugin_path = _os.environ.get("SMART_RESET_PLUGIN", "").strip()
     if _plugin_path:

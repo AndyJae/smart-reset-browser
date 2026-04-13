@@ -45,14 +45,6 @@ py web_main.py
 
 The browser opens automatically at `http://localhost:8765`.
 
-### Start with smart-matching plugin
-
-To enable the **Capture Training Sample** button (camera calibration data collection), use the launcher from the [smart-matching](https://github.com/AndyJae/smart-matching) repo:
-
-```bat
-C:\smart-matching\start_with_matching.bat
-```
-
 ---
 
 ## Usage
