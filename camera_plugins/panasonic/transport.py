@@ -146,6 +146,17 @@ class PanasonicTransport(CameraProtocol):
         """
         return f"cmd={key}&res=1"
 
+    def build_command(self, cmd: str) -> str:
+        """
+        Baut den vollständigen CGI-Set-Befehl aus einem Befehlsfragment.
+
+        cmd = Befehlsfragment aus UI_BUTTONS / UI_DROPDOWNS,
+              z. B. "OSA:11:1" oder "OAW:0"
+
+        Ergebnis: "cmd=OSA:11:1&res=1" — direkt als command an send_command() übergeben.
+        """
+        return f"cmd={cmd}&res=1"
+
     # -----------------------------------------------------------------------
     # CameraProtocol — discover
     # -----------------------------------------------------------------------

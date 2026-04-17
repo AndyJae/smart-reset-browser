@@ -270,7 +270,7 @@ class ResetEngine:
                     f"Missing dropdown command mapping for '{dropdown_key}' → '{label}'"
                 )
                 continue
-            body = self._send(command)
+            body = self._send(f"cmd={command}&res=1")
             if not self._is_response_ok(body):
                 continue
             if dropdown_key == "color_temp":
@@ -286,7 +286,7 @@ class ResetEngine:
             return
         parts = []
         for label, query in status_checks:
-            resp = self._query(query)
+            resp = self._query(f"cmd={query}&res=1")
             parts.append(f"{label}={resp if resp is not None else 'UNKNOWN'}")
         logger.info("POST RESET STATUS: " + ", ".join(parts))
 
@@ -343,7 +343,8 @@ class ResetEngine:
             self._guard()
             states: dict[str, Optional[bool]] = {}
             for key in feature_keys:
-                body = self._query(feature_queries.get(key))
+                raw = feature_queries.get(key)
+                body = self._query(f"cmd={raw}&res=1" if raw else None)
                 states[key] = self._extract_on_off(body) if body else None
 
             if all(state is False for state in states.values()):

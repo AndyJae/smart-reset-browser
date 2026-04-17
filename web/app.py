@@ -231,7 +231,7 @@ def _sync_feature_states(
             if transport is None:
                 continue
             try:
-                body = transport.send_command(ip, port, query)
+                body = transport.send_command(ip, port, transport.build_query(query))
                 data = _json.loads(body)
             except Exception:
                 continue
@@ -248,7 +248,7 @@ def _sync_feature_states(
             if transport is None:
                 continue
             try:
-                body = transport.send_command(ip, port, query)
+                body = transport.send_command(ip, port, transport.build_query(query))
                 data = _json.loads(body)
             except Exception:
                 continue
@@ -594,7 +594,7 @@ async def toggle_feature(request: Request, key: str):
             if not cmd or transport is None:
                 return False
             try:
-                transport.send_command(ip, port, cmd)
+                transport.send_command(ip, port, transport.build_command(cmd))
                 return True
             except Exception as exc:
                 logging.error(f"[{key}] transport error: {exc}")
@@ -663,7 +663,7 @@ async def trigger_action(request: Request, key: str):
                 logging.error(f"[{key}] trigger: no transport available.")
                 return
             try:
-                transport.send_command(ip, port, cmd)
+                transport.send_command(ip, port, transport.build_command(cmd))
                 logging.info(f"[{key}] trigger sent.")
             except Exception as exc:
                 logging.error(f"[{key}] trigger error: {exc}")
@@ -708,7 +708,7 @@ async def set_dropdown(request: Request, key: str):
                 logging.error(f"Dropdown [{key}]: no transport available.")
                 return False
             try:
-                transport.send_command(ip, port, cmd)
+                transport.send_command(ip, port, transport.build_command(cmd))
                 return True
             except Exception as exc:
                 logging.error(f"Dropdown [{key}] transport error: {exc}")

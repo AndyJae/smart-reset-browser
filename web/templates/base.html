@@ -20,11 +20,11 @@
 
     <nav class="sidebar-nav">
       {% if session.connected %}
-      <a class="sidebar-link" href="http://{{ session.ip }}" target="_blank" title="Open camera web UI">
+      <a id="open-camera-btn" class="sidebar-link" href="http://{{ session.ip }}" target="_blank" title="Open camera web UI">
         Open Camera
       </a>
       {% else %}
-      <span class="sidebar-link disabled">Open Camera</span>
+      <span id="open-camera-btn" class="sidebar-link disabled">Open Camera</span>
       {% endif %}
 
       <button class="sidebar-link" onclick="toggleHelp()">Help</button>
@@ -194,14 +194,15 @@ async function ndiSyncConnect(ip) {
   sel.innerHTML = '<option value="">— select source —</option>';
   data.sources.forEach(s => {
     const o = document.createElement('option');
-    o.value = s; o.textContent = s;
+    o.value = s.name; o.textContent = s.name;
     sel.appendChild(o);
   });
 
-  // Match by camera IP inside source name, fall back to previous selection or first source
-  const target = data.sources.find(s => s.includes(ip))
-    || (prev && data.sources.includes(prev) ? prev : null)
-    || data.sources[0];
+  // Match by camera IP, fall back to previous selection or first source
+  const matched = data.sources.find(s => s.ip === ip);
+  const target = matched ? matched.name
+    : (prev && data.sources.some(s => s.name === prev) ? prev : null)
+    || data.sources[0].name;
   sel.value = target;
 
   if (!_ndiRunning) ndiStart();
@@ -278,8 +279,8 @@ function ndiRefreshSources() {
       sel.innerHTML = '<option value="">— select source —</option>';
       (data.sources || []).forEach(s => {
         const o = document.createElement('option');
-        o.value = s; o.textContent = s;
-        if (s === prev) o.selected = true;
+        o.value = s.name; o.textContent = s.name;
+        if (s.name === prev) o.selected = true;
         sel.appendChild(o);
       });
     });
@@ -461,9 +462,13 @@ async function matchingCapture() {
       }
       if (msg.type === 'camera_connected') {
         ndiSyncConnect(msg.ip);
+        const btn = document.getElementById('open-camera-btn');
+        if (btn) btn.outerHTML = `<a id="open-camera-btn" class="sidebar-link" href="http://${msg.ip}" target="_blank" title="Open camera web UI">Open Camera</a>`;
       }
       if (msg.type === 'camera_disconnected') {
         ndiSyncDisconnect();
+        const btn = document.getElementById('open-camera-btn');
+        if (btn) btn.outerHTML = '<span id="open-camera-btn" class="sidebar-link disabled">Open Camera</span>';
       }
     };
     ws.onclose = () => { setTimeout(connect, 2000); };

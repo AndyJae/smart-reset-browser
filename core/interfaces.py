@@ -79,6 +79,20 @@ class CameraProtocol(ABC):
         ...
 
     @abstractmethod
+    def build_command(self, cmd: str) -> str:
+        """
+        Baut den vollständigen Set-Befehlsstring aus einem Befehlsfragment.
+
+        cmd entspricht einem Wert aus UI_BUTTONS oder UI_DROPDOWNS.
+        Die Implementierung wandelt diesen in den protokollspezifischen
+        Befehlsstring um, der direkt an send_command() übergeben werden kann.
+
+        Panasonic:  "OSA:11:1"  → "cmd=OSA:11:1&res=1"
+        BirdDog:    already full command string → returned as-is
+        """
+        ...
+
+    @abstractmethod
     def discover(self, timeout: float = 2.5) -> list[dict[str, Any]]:
         """
         Führt eine Netzwerk-Discovery durch und gibt gefundene Kameras zurück.

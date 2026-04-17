@@ -11,6 +11,7 @@ Provides:
 import ctypes
 import io
 import os
+import re
 import time
 
 import numpy as np
@@ -183,10 +184,11 @@ def is_available() -> bool:
     return _lib is not None
 
 
-def list_sources(timeout_ms: int = 3000) -> list[str]:
-    """Return NDI source names visible on the network.
+def list_sources(timeout_ms: int = 5000) -> list[dict]:
+    """Return NDI sources visible on the network as {name, ip} dicts.
 
-    Waits up to *timeout_ms* for discovery to settle before returning.
+    Polls for source changes in 500 ms intervals until no new sources
+    arrive within one interval or the total timeout is exhausted.
     Raises RuntimeError if the NDI SDK is not installed.
     """
     _require_sdk()
@@ -196,14 +198,28 @@ def list_sources(timeout_ms: int = 3000) -> list[str]:
         raise RuntimeError("NDIlib_find_create_v2() returned NULL")
 
     try:
-        _lib.NDIlib_find_wait_for_sources(finder, timeout_ms)
+        remaining_ms = timeout_ms
+        interval_ms = 500
+        while remaining_ms > 0:
+            changed = _lib.NDIlib_find_wait_for_sources(finder, min(interval_ms, remaining_ms))
+            remaining_ms -= interval_ms
+            if not changed:
+                break  # no new sources arrived — list is stable
+
         count = ctypes.c_uint32(0)
         sources_ptr = _lib.NDIlib_find_get_current_sources(finder, ctypes.byref(count))
-        return [
-            sources_ptr[i].p_ndi_name.decode("utf-8")
-            for i in range(count.value)
-            if sources_ptr[i].p_ndi_name
-        ]
+        results = []
+        for i in range(count.value):
+            raw = sources_ptr[i].p_ndi_name
+            if not raw:
+                continue
+            name = raw.decode("utf-8")
+            if re.search(r'\bHX\d*\b', name, re.IGNORECASE) or "(Channel" in name:
+                continue  # NDI HX sources require HX decoder — not supported
+            url_raw = sources_ptr[i].p_url_address
+            ip = url_raw.decode("utf-8").split(":")[0] if url_raw else ""
+            results.append({"name": name, "ip": ip})
+        return results
     finally:
         _lib.NDIlib_find_destroy(finder)
 

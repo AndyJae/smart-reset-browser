@@ -110,7 +110,7 @@ body {
 /* ===== Main ===== */
 .main {
   flex: 1;
-  padding: 20px 24px;
+  padding: 2rem 24px;
   display: flex;
   flex-direction: row;
   gap: 20px;

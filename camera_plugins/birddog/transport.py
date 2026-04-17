@@ -170,6 +170,14 @@ class BirdDogTransport(CameraProtocol):
         """
         return f"GET {key}"
 
+    def build_command(self, cmd: str) -> str:
+        """
+        BirdDog commands in UI_BUTTONS / UI_DROPDOWNS are already fully
+        formatted (e.g. 'POST /birddogexpsetup {"IrisMode": "auto"}').
+        Returned as-is.
+        """
+        return cmd
+
     # -----------------------------------------------------------------------
     # CameraProtocol — discover
     # -----------------------------------------------------------------------
