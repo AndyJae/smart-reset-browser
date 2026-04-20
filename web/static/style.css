@@ -73,11 +73,11 @@ body {
   font-weight: 700;
   letter-spacing: 0.5px;
   padding: 0 20px 16px;
-  border-bottom: 1px solid var(--border);
   color: var(--text);
   text-align: center;
 }
 .sidebar-logo span { color: var(--accent); }
+a.sidebar-logo { text-decoration: none; display: block; }
 
 .sidebar-nav {
   display: flex;
@@ -103,6 +103,7 @@ body {
 .sidebar-link:hover { background: var(--bg-hover); }
 .sidebar-link.disabled { color: var(--text-dim); cursor: default; }
 .sidebar-link.disabled:hover { background: none; }
+.sidebar-homepage { text-decoration: none; display: block; }
 
 .toggle-row { gap: 8px; }
 .toggle-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
