@@ -121,7 +121,7 @@ a.sidebar-logo { text-decoration: none; display: block; }
 }
 
 .main-center {
-  flex: 1 1 0;
+  flex: 1 1 500px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -131,11 +131,16 @@ a.sidebar-logo { text-decoration: none; display: block; }
 }
 
 .main-ndi {
-  flex: 0 0 390px;
+  flex: 0 1 390px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   height: 100%;
+}
+
+@media (max-width: 600px) {
+  .main-ndi { display: none; }
 }
 
 /* ===== Panel ===== */
