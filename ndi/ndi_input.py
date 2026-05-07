@@ -200,11 +200,14 @@ def list_sources(timeout_ms: int = 5000) -> list[dict]:
     try:
         remaining_ms = timeout_ms
         interval_ms = 500
+        found_any = False
         while remaining_ms > 0:
             changed = _lib.NDIlib_find_wait_for_sources(finder, min(interval_ms, remaining_ms))
             remaining_ms -= interval_ms
-            if not changed:
-                break  # no new sources arrived — list is stable
+            if changed:
+                found_any = True
+            elif found_any:
+                break  # sources found; list is now stable
 
         count = ctypes.c_uint32(0)
         sources_ptr = _lib.NDIlib_find_get_current_sources(finder, ctypes.byref(count))

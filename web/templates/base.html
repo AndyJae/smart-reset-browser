@@ -183,10 +183,17 @@ function ndiSyncToggle(enabled) {
 
 async function ndiSyncConnect(ip) {
   if (!_ndiSyncEnabled) return;
+  const maxAttempts = 4, retryDelay = 2000;
   let data;
-  try { data = await fetch('/api/ndi/sources').then(r => r.json()); }
-  catch (_) { return; }
-  if (!data || !data.ndi_available || !data.sources || data.sources.length === 0) return;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (!_ndiSyncEnabled) return;
+    if (attempt > 0) await new Promise(r => setTimeout(r, retryDelay));
+    try { data = await fetch('/api/ndi/sources').then(r => r.json()); }
+    catch (_) { continue; }
+    if (data && data.ndi_available && data.sources && data.sources.length > 0) break;
+    data = null;
+  }
+  if (!data) return;
 
   const sel = document.getElementById('ndi-source-select');
   if (!sel) return;
@@ -207,7 +214,7 @@ async function ndiSyncConnect(ip) {
     || data.sources[0].name;
   sel.value = target;
 
-  if (!_ndiRunning) ndiStart();
+  if (_ndiRunning) { ndiStop(); ndiStart(); } else { ndiStart(); }
 }
 
 function ndiSyncDisconnect() {
@@ -304,6 +311,10 @@ function ndiStart() {
   wrap.style.display = 'block';
   btn.textContent = 'Stop';
   _ndiRunning = true;
+  img.style.display = 'none';
+  img.src = '';
+  const framePh = document.getElementById('ndi-frame-placeholder');
+  if (framePh) framePh.style.display = 'flex';
 
   const url = 'ws://' + location.host + '/ws/ndi?source=' + encodeURIComponent(source);
   _ndiWs = new WebSocket(url);
@@ -322,6 +333,9 @@ function ndiStart() {
     if (type === 1) {
       const prev = img.src;
       img.src = url;
+      img.style.display = 'block';
+      const ph = document.getElementById('ndi-frame-placeholder');
+      if (ph) ph.style.display = 'none';
       if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
       if (_ndiFullscreenType === 1) {
         const fsImg = document.getElementById('ndi-fullscreen-img');
@@ -335,6 +349,9 @@ function ndiStart() {
       if (waveImg) {
         const prev = waveImg.src;
         waveImg.src = url;
+        waveImg.style.display = 'block';
+        const ph = document.getElementById('ndi-waveform-placeholder');
+        if (ph) ph.style.display = 'none';
         if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
       }
       if (_ndiFullscreenType === 2) {
@@ -348,6 +365,9 @@ function ndiStart() {
       if (vecImg) {
         const prev = vecImg.src;
         vecImg.src = url;
+        vecImg.style.display = 'block';
+        const ph = document.getElementById('ndi-vectorscope-placeholder');
+        if (ph) ph.style.display = 'none';
         if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
       }
       if (_ndiFullscreenType === 3) {
@@ -373,6 +393,14 @@ function ndiStop() {
   if (waveWrap) waveWrap.style.display = 'none';
   const vecWrap = document.getElementById('ndi-vectorscope-wrap');
   if (vecWrap) vecWrap.style.display = 'none';
+  ['ndi-frame', 'ndi-waveform', 'ndi-vectorscope'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.src = ''; el.style.display = 'none'; }
+  });
+  ['ndi-frame-placeholder', 'ndi-waveform-placeholder', 'ndi-vectorscope-placeholder'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'flex';
+  });
 }
 
 // Auto-populate sources on page load if monitor panel is present
@@ -426,6 +454,31 @@ async function matchingCapture() {
     const data = await resp.json();
     if (data.ok) {
       status.textContent = `saved: ${data.sample_id} (${data.patches} patches)`;
+    } else {
+      status.textContent = `error: ${data.error}`;
+    }
+  } catch(e) {
+    status.textContent = `error: ${e}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function matchingCharacterise() {
+  const source = document.getElementById('ndi-source-select')?.value;
+  if (!source) { alert('Select an NDI source first.'); return; }
+  const btn = document.getElementById('matching-characterise-btn');
+  const status = document.getElementById('matching-capture-status');
+  btn.disabled = true;
+  status.textContent = 'characterising…';
+  try {
+    const fd = new FormData();
+    fd.append('ndi_source', source);
+    const resp = await fetch('/api/matching/characterise', {method: 'POST', body: fd});
+    const data = await resp.json();
+    if (data.ok) {
+      const n = Object.keys(data.params || {}).length;
+      status.textContent = `characterised: ${n} param(s) measured`;
     } else {
       status.textContent = `error: ${data.error}`;
     }

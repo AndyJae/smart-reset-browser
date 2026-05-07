@@ -55,13 +55,16 @@ def _open_browser():
 
 
 def main():
-    # When running as a windowless exe, sys.stdout is None.
-    # Uvicorn's default log formatter calls sys.stdout.isatty(), which crashes.
-    # Redirect stdout/stderr to devnull so the formatter has something to work with.
-    if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w")
-    if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w")
+    # When running as a windowless exe, sys.stdout/stderr are None.
+    # Redirect to a log file so crashes are visible instead of silently swallowed.
+    if sys.stdout is None or sys.stderr is None:
+        _log_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False)
+                                   else os.path.abspath(__file__))
+        _log = open(os.path.join(_log_dir, "smart_reset.log"), "a", buffering=1)
+        if sys.stdout is None:
+            sys.stdout = _log
+        if sys.stderr is None:
+            sys.stderr = _log
 
     server = uvicorn.Server(uvicorn.Config(
         app,
@@ -82,17 +85,33 @@ def main():
     def on_quit(icon, _item):
         server.should_exit = True
         icon.stop()
+        os._exit(0)
 
-    tray = pystray.Icon(
-        "smart-reset",
-        _load_tray_image(),
-        "smart-reset",
-        menu=pystray.Menu(
-            pystray.MenuItem("Open", on_open, default=True),
-            pystray.MenuItem("Quit", on_quit),
-        ),
-    )
-    tray.run()  # blocks until on_quit calls icon.stop()
+    try:
+        tray = pystray.Icon(
+            "smart-reset",
+            _load_tray_image(),
+            "smart-reset",
+            menu=pystray.Menu(
+                pystray.MenuItem("Open", on_open, default=True),
+                pystray.MenuItem("Quit", on_quit),
+            ),
+        )
+        tray.run()  # blocks until on_quit calls icon.stop()
+    except Exception as exc:
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            f"Smart Reset failed to create the system tray icon:\n\n{exc}\n\n"
+            "The server is still running. Open http://127.0.0.1:8765 manually.",
+            "Smart Reset — Tray Error",
+            0x10 | 0x1000,  # MB_ICONERROR | MB_SYSTEMMODAL
+        )
+    finally:
+        # Force-exit so the process terminates immediately and releases the
+        # single-instance mutex. Without this, pystray's Windows backend or
+        # uvicorn's graceful-shutdown thread can keep the process alive after
+        # the tray loop ends, causing "already running" on the next launch.
+        os._exit(0)
 
 
 if __name__ == "__main__":

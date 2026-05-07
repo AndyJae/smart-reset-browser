@@ -717,6 +717,9 @@ async def set_dropdown(request: Request, key: str):
         ok = await loop.run_in_executor(_executor, _plugin_dropdown)
         if ok:
             session.dropdown_selections[key] = label
+            _legacy_attrs = {"color_temp": "c_temp_selection", "gamma": "gamma_selection", "linear_matrix": "lmatrix_selection"}
+            if key in _legacy_attrs:
+                setattr(session, _legacy_attrs[key], label)
             logging.info(f"[{key}] -> {label}")
             # Sync any feature button states that depend on this dropdown
             sync = getattr(module, "UI_BUTTON_DROPDOWN_SYNC", {})

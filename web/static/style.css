@@ -438,6 +438,17 @@ a.sidebar-logo { text-decoration: none; display: block; }
   object-fit: fill;
 }
 
+.ndi-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  font-size: 13px;
+  pointer-events: none;
+}
+
 .ndi-status-badge {
   position: absolute;
   top: 8px;
