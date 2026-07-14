@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING
 import requests
 
 from core.exceptions import (
-    CameraCommandError,
     CameraConnectionError,
     CameraDiscoveryError,
     CameraResponseError,
@@ -66,7 +65,33 @@ class PanasonicTransport(CameraProtocol):
             CameraConnectionError  — Netzwerkfehler oder Timeout
             CameraResponseError    — HTTP-Status != 200
         """
-        url = f"http://{ip}:{port}/cgi-bin/aw_cam?{command}"
+        return self._request(ip, port, "aw_cam", command)
+
+    def send_ptz_command(self, ip: str, port: str, command: str) -> str:
+        """
+        Sendet einen CGI-Befehl an den PTZ-Endpoint der Kamera.
+
+        URL: GET http://<ip>:<port>/cgi-bin/aw_ptz?<command>
+
+        Wird u. a. für "Delete Preset Memory" (#C[nn]) benötigt, das anders als
+        die übrigen Befehle nicht über aw_cam, sondern über aw_ptz läuft.
+
+        Gibt den Response-Body (stripped) zurück.
+
+        Wirft:
+            CameraConnectionError  — Netzwerkfehler oder Timeout
+            CameraResponseError    — HTTP-Status != 200
+        """
+        return self._request(ip, port, "aw_ptz", command)
+
+    def _request(self, ip: str, port: str, endpoint: str, command: str) -> str:
+        """
+        Sendet einen CGI-Befehl an einen beliebigen aw_*-Endpoint.
+
+        Gemeinsame Implementierung für send_command() (aw_cam) und
+        send_ptz_command() (aw_ptz).
+        """
+        url = f"http://{ip}:{port}/cgi-bin/{endpoint}?{command}"
         logger.info(f"HTTP CMD: GET {url}")
         try:
             response = requests.get(url, timeout=_DEFAULT_TIMEOUT)

@@ -1,14 +1,11 @@
 """
 core/reset_engine.py — Reset-Sequenzlogik für die Plugin-Architektur.
 
-Ersetzt langfristig smart_reset/reset_worker.py.
-
-Unterschiede zu reset_worker.py:
-  - Nutzt CameraProtocol.send_command() statt http_client.send_command() direkt
-  - Nutzt ResetResult / ResetContext aus core/models.py statt plain dict / SimpleNamespace
-  - Wirft StaleSessionError statt still abzubrechen
-  - Fehler aus dem Transport (CameraConnectionError, CameraCommandError) werden
-    explizit gefangen und als fehlgeschlagene Schritte ins ResetResult geschrieben
+Nutzt CameraProtocol.send_command() über die registrierten Transports,
+ResetResult / ResetContext aus core/models.py, und wirft StaleSessionError
+statt still abzubrechen. Fehler aus dem Transport (CameraConnectionError,
+CameraError) werden explizit gefangen und als fehlgeschlagene Schritte
+ins ResetResult geschrieben.
 
 Aufruf (in ThreadPoolExecutor, nie direkt im asyncio-Event-Loop):
 
@@ -31,7 +28,6 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Optional
 
 from core.exceptions import (
-    CameraCommandError,
     CameraConnectionError,
     CameraError,
     StaleSessionError,
@@ -155,9 +151,6 @@ class ResetEngine:
             return self._transport.send_command(self._ip, self._port, command)
         except CameraConnectionError as exc:
             logger.error(f"Connection error: {exc}")
-            return None
-        except CameraCommandError as exc:
-            logger.error(f"Camera command error [{exc.error_code}]: {exc}")
             return None
         except CameraError as exc:
             logger.error(f"Camera error: {exc}")

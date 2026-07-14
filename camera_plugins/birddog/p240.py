@@ -17,6 +17,7 @@ from camera_plugins.birddog.base import PROTOCOL, query_raw, send_post  # noqa: 
 CAMERA_ID = "P240"
 CAMERA_ID_ALIASES = ["P240", "BirdDog P240"]
 DISPLAY_NAME = "BirdDog P240"
+SUPPORTS_OSD_TRIGGER = True
 # PROTOCOL imported from base ("birddog")
 
 RESET_COMMANDS: list = []
@@ -42,6 +43,9 @@ UI_BUTTONS: dict = {
     "wb_trigger": {
         "cmd": 'POST /birddogwbsetup {"OnePushTrigger": "Trigger"}',
     },
+    "osd": {
+        "cmd": 'POST /birddogptz {"Menu": "On/Off"}',
+    },
 }
 
 UI_BUTTON_CONDITIONS: dict = {
@@ -64,6 +68,7 @@ UI_BUTTON_LABELS: dict = {
     "wb_trigger": "White Balance",
     "exp_mode":   "Exposure Mode",
     "wb_mode":    "White Balance",
+    "osd":        "Toggle OSD",
 }
 
 UI_BUTTON_DROPDOWN_SYNC: dict = {

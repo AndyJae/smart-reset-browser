@@ -13,11 +13,13 @@ from camera_plugins.panasonic.base import (
     ensure_dropdown_value as _ensure_dropdown_value,
     filter_entries as _filter_entries,
     send_set_command as _send_set_command,
-    skip_reset_commands as _skip_reset_commands,
 )
 
 CAMERA_ID    = "AW-UE100"
 DISPLAY_NAME = "Panasonic AW-UE100"
+SUPPORTS_PRESET_DELETE = True
+SUPPORTS_PRESET_DELETE_NAME_THUMBNAIL = True
+SUPPORTS_OSD_TOGGLE = True
 
 RESET_COMMANDS = [
     ("ATW TARGET R", "OSJ", "0D", "80"),
@@ -88,6 +90,7 @@ UI_BUTTONS = {
     "aww_white":  {"cmd": "OWS"},
     "drs":        {"on": "OSE:33:1", "off": "OSE:33:0"},
     "knee":       {"on": "OSA:2D:1", "off": "OSA:2D:0"},
+    "osd":        {"on": "DUS:1",    "off": "DUS:0"},
     "white_clip": {"on": "OSA:2E:1", "off": "OSA:2E:0"},
 }
 
@@ -96,6 +99,7 @@ UI_BUTTON_LABELS = {
     "auto_iris":  "Auto Iris",
     "drs":        "DRS",
     "knee":       "Knee",
+    "osd":        "OSD",
     "white_clip": "White Clip",
     "awb_black":  "ABB (Black)",
     "aww_white":  "AWW (White)",
@@ -103,7 +107,7 @@ UI_BUTTON_LABELS = {
 
 UI_LAYOUT = [
     ("knee",       "drs",       "auto_iris",  "gamma"),
-    ("white_clip", "auto_focus","awb_black",  "color_temp"),
+    ("white_clip", "auto_focus", None,        "color_temp"),
 ]
 
 UI_DROPDOWNS = {
@@ -135,6 +139,7 @@ UI_FEATURE_QUERIES = {
     "auto_iris":  "QRS",
     "drs":        "QSE:33",
     "knee":       "QSA:2D",
+    "osd":        "QUS",
     "white_clip": "QSA:2E",
 }
 
@@ -145,7 +150,7 @@ UI_DROPDOWN_QUERIES = {
 
 POST_RESET_FEATURE_STATES = [
     ("auto_iris",  True),
-    ("auto_focus", False),
+    ("auto_focus", True),
     ("drs",        False),
     ("knee",       False),
     ("white_clip", False),
@@ -153,6 +158,7 @@ POST_RESET_FEATURE_STATES = [
 
 POST_RESET_DROPDOWN_DEFAULTS = {
     "color_temp": "White Balance is ATW",
+    "gamma":      "Gamma is HD",
 }
 
 POST_RESET_STATUS_QUERIES = [

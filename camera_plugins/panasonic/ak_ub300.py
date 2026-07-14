@@ -22,6 +22,7 @@ from camera_plugins.panasonic.base import (
 CAMERA_ID         = "AK-UB300"
 CAMERA_ID_ALIASES = ["AK-UB300GJ", "AK-UB300EJ"]
 DISPLAY_NAME      = "Panasonic AK-UB300"
+SUPPORTS_OSD_TOGGLE = True
 
 # ---------------------------------------------------------------------------
 # RESET_COMMANDS
@@ -129,6 +130,7 @@ UI_BUTTONS = {
     "knee":        {"on": "OSA:2D:1", "off": "OSA:2D:0"},
     "white_clip":  {"on": "OSA:2E:1", "off": "OSA:2E:0"},
     "super_gain":  {"on": "OSI:28:1", "off": "OSI:28:0"},
+    "osd":         {"on": "DUS:1",    "off": "DUS:0"},
 }
 
 UI_BUTTON_LABELS = {
@@ -139,11 +141,12 @@ UI_BUTTON_LABELS = {
     "awb_black":   "ABB (Black)",
     "aww_white":   "AWW (White)",
     "super_gain":  "Super Gain",
+    "osd":         "OSD",
 }
 
 UI_LAYOUT = [
     ("knee",       "drs",       "auto_iris",  "gamma"),
-    ("white_clip", "super_gain","awb_black",  "color_temp"),
+    ("white_clip", "super_gain", None,        "color_temp"),
     (None,         None,        None,         "gain_select"),
 ]
 
@@ -184,6 +187,7 @@ UI_FEATURE_QUERIES = {
     "knee":       "QSA:2D",
     "white_clip": "QSA:2E",
     "super_gain": "QSI:28",
+    "osd":        "QUS",
 }
 
 UI_DROPDOWN_QUERIES = {

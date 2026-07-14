@@ -6,9 +6,16 @@
   <section class="panel">
     <h2 class="panel-title">Camera</h2>
 
-    <!-- Error banner -->
+    <!-- Error popup — content passed via a hidden element so Jinja's normal
+         HTML-escaping applies; showErrorModal() reads it back via textContent. -->
     {% if error is defined and error %}
-    <div class="banner banner-error">{{ error }}</div>
+    <div id="camera-panel-error-text" hidden>{{ error }}</div>
+    <script>
+      (function () {
+        var el = document.getElementById('camera-panel-error-text');
+        if (el) showErrorModal(el.textContent);
+      })();
+    </script>
     {% endif %}
 
     <!-- Connection row -->
@@ -32,6 +39,28 @@
         {% if session.scan_in_progress %}Scanning…{% else %}Scan Network{% endif %}
       </button>
       <span id="scan-indicator" class="htmx-indicator spinner"></span>
+
+      {% if supports_osd_toggle %}
+      {% set osd_on = session.feature_states.get('osd', False) %}
+      <button id="feature-osd"
+              class="btn btn-feature push-right {{ 'active' if osd_on else '' }}"
+              hx-post="/api/camera/feature/osd"
+              hx-vals='{"enabled": "{{ 'false' if osd_on else 'true' }}"}'
+              hx-target="#feature-osd"
+              hx-swap="outerHTML"
+              {% if not session.connected %}disabled{% endif %}>
+        OSD {{ 'ON' if osd_on else 'OFF' }}
+      </button>
+      {% elif supports_osd_trigger %}
+      <button id="trigger-osd"
+              class="btn btn-feature push-right"
+              hx-post="/api/camera/trigger/osd"
+              hx-target="#camera-panel"
+              hx-swap="outerHTML"
+              {% if not session.connected %}disabled{% endif %}>
+        Toggle OSD
+      </button>
+      {% endif %}
     </div>
 
     <!-- Discovered cameras dropdown -->
@@ -86,9 +115,36 @@
               hx-target="#camera-panel"
               hx-swap="outerHTML"
               hx-confirm="Start full reset sequence?"
-              {% if not session.connected or session.reset_in_progress %}disabled{% endif %}>
+              {% if not session.connected or session.reset_in_progress or session.preset_delete_in_progress %}disabled{% endif %}>
         {% if session.reset_in_progress %}Resetting…{% else %}Reset Camera{% endif %}
       </button>
+
+      {% if supports_preset_delete %}
+      <span class="btn-row-divider preset-delete-divider"></span>
+      <div class="preset-delete-group">
+        <span class="form-label">Delete Preset</span>
+        <input type="number" id="preset-start" name="preset_start" class="input input-short" min="0" max="99" value="0"
+               {% if not session.connected or session.reset_in_progress or session.preset_delete_in_progress %}disabled{% endif %}>
+        <span>–</span>
+        <input type="number" id="preset-end" name="preset_end" class="input input-short" min="0" max="99" value="99"
+               {% if not session.connected or session.reset_in_progress or session.preset_delete_in_progress %}disabled{% endif %}>
+        <label class="toggle-row">
+          <input type="checkbox" name="preset_delete_all" id="preset-delete-all"
+                 onchange="presetDeleteAllChanged(this)"
+                 {% if not session.connected or session.reset_in_progress or session.preset_delete_in_progress %}disabled{% endif %}>
+          All
+        </label>
+        <button class="btn {{ 'btn-reset-active' if session.connected else 'btn-reset-inactive' }}"
+                hx-post="/api/camera/delete-presets"
+                hx-target="#camera-panel"
+                hx-swap="outerHTML"
+                hx-confirm="Delete presets in the selected range?"
+                hx-include="[name='preset_start'],[name='preset_end'],[name='preset_delete_all']"
+                {% if not session.connected or session.reset_in_progress or session.preset_delete_in_progress %}disabled{% endif %}>
+          {% if session.preset_delete_in_progress %}Deleting…{% else %}Delete Presets{% endif %}
+        </button>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Advanced controls — always visible, disabled when not connected -->
@@ -102,13 +158,40 @@
       'linear_matrix':(session.lmatrix_command_map, session.lmatrix_selection),
     } %}
 
-    <div class="advanced-grid">
-      {% for row in ui_layout %}
-        {% set btn1, btn2, btn3, dd_key = row[0], row[1], row[2], row[3] %}
+    {% macro render_dropdown(dd_key, panasonic_dd, ui_dropdowns, ui_dropdown_conditions, session, adv_disabled) %}
         {% set pan = panasonic_dd.get(dd_key) if dd_key else none %}
         {% set dd_sel = pan[1] if pan else (session.dropdown_selections.get(dd_key, '') if dd_key else '') %}
         {% set dd_options = ui_dropdowns.get(dd_key, []) if dd_key else [] %}
         {% set dd_map = pan[0] if pan else dd_options %}
+        {% set dd_require_keys = ui_dropdown_conditions.get(dd_key, []) if dd_key else [] %}
+        {% set dd_ns = namespace(any_enabled=false) %}
+        {% for req_key in dd_require_keys %}
+          {% if session.feature_states.get(req_key, false) %}{% set dd_ns.any_enabled = true %}{% endif %}
+        {% endfor %}
+        {% set dd_disabled = dd_require_keys and not dd_ns.any_enabled %}
+        {% if dd_map %}
+        <select name="label"
+                class="input select-dropdown"
+                hx-post="/api/camera/dropdown/{{ dd_key }}"
+                hx-target="#camera-panel"
+                hx-swap="outerHTML"
+                hx-trigger="change"
+                hx-include="this"
+                {% if adv_disabled or dd_disabled %}disabled{% endif %}>
+          {% if not dd_sel %}<option value="">— {{ dd_key | replace('_',' ') | title }} —</option>{% endif %}
+          {% for opt_label, opt_cmd in dd_options %}
+            {% if opt_cmd is not none %}
+            <option value="{{ opt_label }}" {{ 'selected' if opt_label == dd_sel else '' }}>{{ opt_label }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+        {% else %}
+        <span></span>
+        {% endif %}
+    {% endmacro %}
+
+    {% macro adv_row(row, panasonic_dd, ui_buttons, ui_button_labels, ui_dropdowns_sync, ui_button_conditions, ui_dropdowns, ui_dropdown_conditions, session, adv_disabled) %}
+        {% set btn1, btn2, btn3, dd_key = row[0], row[1], row[2], row[3] %}
 
         <div class="adv-row">
           {% for key in [btn1, btn2, btn3] %}
@@ -144,6 +227,19 @@
                         {% if adv_disabled or not cond_met %}disabled{% endif %}>
                   {{ label }}
                 </button>
+              {% elif 'cycle' in btn_def %}
+                {# N-state cycle button — each click advances to the next state #}
+                {% set cycle = btn_def['cycle'] %}
+                {% set cur_idx = session.cycle_states.get(key, 0) %}
+                {% set cur_state = cycle[cur_idx] if cur_idx < cycle|length else cycle[0] %}
+                <button id="cycle-{{ key }}"
+                        class="btn btn-feature {{ 'active' if (cur_idx > 0 and session.connected) else '' }}"
+                        hx-post="/api/camera/cycle/{{ key }}"
+                        hx-target="#camera-panel"
+                        hx-swap="outerHTML"
+                        {% if adv_disabled %}disabled{% endif %}>
+                  {{ label }}: {{ cur_state['label'] }}
+                </button>
               {% else %}
                 <span></span>
               {% endif %}
@@ -152,26 +248,13 @@
             {% endif %}
           {% endfor %}
 
-          {% if dd_map %}
-          <select name="label"
-                  class="input select-dropdown"
-                  hx-post="/api/camera/dropdown/{{ dd_key }}"
-                  hx-target="#camera-panel"
-                  hx-swap="outerHTML"
-                  hx-trigger="change"
-                  hx-include="this"
-                  {% if adv_disabled %}disabled{% endif %}>
-            {% if not dd_sel %}<option value="">— {{ dd_key | replace('_',' ') | title }} —</option>{% endif %}
-            {% for opt_label, opt_cmd in dd_options %}
-              {% if opt_cmd is not none %}
-              <option value="{{ opt_label }}" {{ 'selected' if opt_label == dd_sel else '' }}>{{ opt_label }}</option>
-              {% endif %}
-            {% endfor %}
-          </select>
-          {% else %}
-          <span></span>
-          {% endif %}
+          {{ render_dropdown(dd_key, panasonic_dd, ui_dropdowns, ui_dropdown_conditions, session, adv_disabled) }}
         </div>
+    {% endmacro %}
+
+    <div class="advanced-grid">
+      {% for row in ui_layout %}
+        {{ adv_row(row, panasonic_dd, ui_buttons, ui_button_labels, ui_dropdowns_sync, ui_button_conditions, ui_dropdowns, ui_dropdown_conditions, session, adv_disabled) }}
       {% endfor %}
 
       <!-- Balance buttons — only rendered if defined in the module -->
@@ -196,7 +279,11 @@
           {% if session.balance_in_progress %}Please Wait…{% else %}{{ ui_button_labels.get('aww_white', 'AWW (White)') }}{% endif %}
         </button>
         {% endif %}
-        <span></span>
+        {% if ui_balance_dropdown %}
+          {{ render_dropdown(ui_balance_dropdown, panasonic_dd, ui_dropdowns, ui_dropdown_conditions, session, adv_disabled) }}
+        {% else %}
+          <span></span>
+        {% endif %}
       </div>
       {% endif %}
 
@@ -213,5 +300,21 @@ function applyDiscovered(val) {
   const portEl = document.getElementById('cam-port');
   if (ipEl) ipEl.value = ip;
   if (portEl) portEl.value = port;
+}
+
+function presetDeleteSync() {
+  const all = document.getElementById('preset-delete-all');
+  const start = document.getElementById('preset-start');
+  const end = document.getElementById('preset-end');
+  if (!all || !start || !end) return;
+  start.disabled = all.checked;
+  end.disabled = all.checked;
+}
+
+function presetDeleteAllChanged(checkbox) {
+  if (checkbox.checked) {
+    showPresetDeleteAllInfo();
+  }
+  presetDeleteSync();
 }
 </script>

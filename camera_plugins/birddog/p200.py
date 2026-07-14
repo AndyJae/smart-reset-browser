@@ -16,6 +16,7 @@ from camera_plugins.birddog.base import PROTOCOL, query_raw, send_post  # noqa: 
 CAMERA_ID = "P200A5"
 CAMERA_ID_ALIASES = ["P200", "P200A4", "P200A5", "BirdDog P200A4_A5"]
 DISPLAY_NAME = "BirdDog P200"
+SUPPORTS_OSD_TRIGGER = True
 # PROTOCOL imported from base ("birddog")
 
 RESET_COMMANDS: list = []  # Not used — run_reset() handles the full reset
@@ -41,6 +42,9 @@ UI_BUTTONS: dict = {
     },
     "wb_trigger": {
         "cmd": 'POST /birddogwbsetup {"OnePushTrigger": "Trigger"}',
+    },
+    "osd": {
+        "cmd": 'POST /birddogptz {"Menu": "On/Off"}',
     },
 }
 
@@ -68,6 +72,7 @@ UI_BUTTON_LABELS: dict = {
     "wb_trigger": "White Balance",
     "exp_mode":   "Exposure Mode",
     "wb_mode":    "White Balance",
+    "osd":        "Toggle OSD",
 }
 
 UI_BUTTON_DROPDOWN_SYNC: dict = {
@@ -90,7 +95,7 @@ UI_DROPDOWNS: dict = {
         ("Outdoor Auto",      'POST /birddogwbsetup {"WbMode": "OUTDOOR-AUTO"}'),
         ("One Push",          'POST /birddogwbsetup {"WbMode": "ONEPUSH"}'),
         ("ATW",               'POST /birddogwbsetup {"WbMode": "ATW"}'),
-        ("Manual",            'POST /birddogwbsetup {"WbMode": "MANUAL"}'),  # not accepted on firmware 5.5.114
+        ("Manual",            'POST /birddogwbsetup {"WbMode": "MANUAL"}'),
         ("SVL Auto",          'POST /birddogwbsetup {"WbMode": "SVL-AUTO"}'),
         ("SVL",               'POST /birddogwbsetup {"WbMode": "SVL"}'),
         ("SVL Outdoor Auto",  'POST /birddogwbsetup {"WbMode": "SVL-OUTDOOR-AUTO"}'),
@@ -119,6 +124,7 @@ UI_DROPDOWN_RESPONSE_MAP: dict = {
         "ONEPUSH":           "One Push",
         "ATW":               "ATW",
         "MANUAL":            "Manual",
+        "USER":              "Manual",
         "SVL-AUTO":          "SVL Auto",
         "SVL":               "SVL",
         "SVL-OUTDOOR-AUTO":  "SVL Outdoor Auto",

@@ -32,6 +32,8 @@ CAMERA_ID_ALIASES = [
     "AW-HN38", "AW-HN40", "AW-HN65", "AW-HN70",
 ]
 DISPLAY_NAME = "Panasonic AW-HE40"
+SUPPORTS_OSD_TOGGLE = True
+SUPPORTS_PRESET_DELETE = True
 
 # ---------------------------------------------------------------------------
 # RESET_COMMANDS
@@ -111,6 +113,7 @@ UI_BUTTONS = {
     "aww_white":  {"cmd": "OWS"},
     "drs":        {"on": "OSE:33:1", "off": "OSE:33:0"},
     "white_clip": {"on": "OSA:2E:1", "off": "OSA:2E:0"},
+    "osd":        {"on": "DUS:1",    "off": "DUS:0"},
     # Day/Night mode (IR cut filter)
     "night_mode": {"on": "OSI:1A:1", "off": "OSI:1A:0"},
 }
@@ -120,14 +123,15 @@ UI_BUTTON_LABELS = {
     "auto_iris":  "Auto Iris",
     "drs":        "DRS",
     "white_clip": "White Clip",
+    "osd":        "OSD",
     "awb_black":  "ABB (Black)",
     "aww_white":  "AWW (White)",
     "night_mode": "Night Mode",
 }
 
 UI_LAYOUT = [
-    ("drs",        "auto_iris",  "auto_focus", "color_temp"),
-    ("white_clip", "night_mode", "awb_black",  "gamma"),
+    ("drs",        "auto_iris",  "auto_focus", "gamma"),
+    ("white_clip", "night_mode", None,         "color_temp"),
 ]
 
 UI_DROPDOWNS = {
@@ -160,6 +164,7 @@ UI_FEATURE_QUERIES = {
     "auto_iris":  "QRS",
     "drs":        "QSE:33",
     "white_clip": "QSA:2E",
+    "osd":        "QUS",
     "night_mode": "QSI:1A",
 }
 
@@ -170,7 +175,7 @@ UI_DROPDOWN_QUERIES = {
 
 POST_RESET_FEATURE_STATES = [
     ("auto_iris",  True),
-    ("auto_focus", False),
+    ("auto_focus", True),
     ("drs",        False),
     ("white_clip", False),
     ("night_mode", False),
@@ -178,6 +183,7 @@ POST_RESET_FEATURE_STATES = [
 
 POST_RESET_DROPDOWN_DEFAULTS = {
     "color_temp": "White Balance is ATW",
+    "gamma":      "Gamma is HD",
 }
 
 POST_RESET_STATUS_QUERIES = [

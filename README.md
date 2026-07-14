@@ -54,9 +54,11 @@ The browser opens automatically at `http://localhost:8765`.
 | **Scan Network** | Discovers cameras on the LAN (Panasonic: UDP broadcast, BirdDog: HTTP scan) |
 | **Connect** | Connects to the camera — model is detected automatically |
 | **Reset Camera** | Runs the full reset sequence; UI state re-syncs from the camera afterwards |
-| **ABB (Black)** | Automatic black balance (Panasonic) |
+| **Delete Presets** | Delete a single preset, a range, or all presets — Panasonic UE-series (memory + name + thumbnail) and HE-series/HR140 (memory only) |
+| **ABB (Black)** | Automatic black balance — color temp must be set first (Panasonic) |
 | **AWW (White)** | Automatic white balance — color temp must be set first (Panasonic) |
 | **Feature Buttons** | Toggle camera features (Auto Focus, Auto Iris, Gamma, Matrix, etc.) on/off |
+| **OSD Toggle** | Show/hide the camera's on-screen menu — stateful ON/OFF on Panasonic, stateless flip on BirdDog |
 | **Dropdowns** | Select camera modes (Exposure, White Balance, Color Temp, etc.) |
 | **Trigger Buttons** | One-shot commands — enabled only when the related mode is active |
 | **Open Camera** | Opens the camera's web GUI in the browser |

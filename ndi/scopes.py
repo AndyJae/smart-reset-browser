@@ -80,16 +80,27 @@ except TypeError:
     _FONT = ImageFont.load_default()
 
 
+# The graticule/labels only depend on (out_h, out_w), which are constant in
+# practice — cache the rendered background per size instead of redrawing it
+# with PIL on every frame (measured ~35ms/frame, the dominant cost).
+_canvas_cache: dict[tuple[int, int], np.ndarray] = {}
+
+
 def _make_canvas(out_h: int, out_w: int) -> np.ndarray:
-    canvas = np.full((out_h, out_w, 3), _BG, dtype=np.uint8)
-    img  = Image.fromarray(canvas)
-    draw = ImageDraw.Draw(img)
-    for level in _GRATICULE_LEVELS:
-        y = int((1.0 - (level - _RANGE_MIN) / (_RANGE_MAX - _RANGE_MIN)) * (out_h - 1))
-        line_color = tuple(_GRATICULE_COLOR_KEY.tolist()) if level in (0, 100) else tuple(_GRATICULE_COLOR.tolist())
-        draw.line([(0, y), (out_w - 1, y)], fill=line_color)
-        draw.text((2, y - 9), f"{level}%", fill=_LABEL_COLOR, font=_FONT)
-    return np.array(img)
+    key = (out_h, out_w)
+    cached = _canvas_cache.get(key)
+    if cached is None:
+        canvas = np.full((out_h, out_w, 3), _BG, dtype=np.uint8)
+        img  = Image.fromarray(canvas)
+        draw = ImageDraw.Draw(img)
+        for level in _GRATICULE_LEVELS:
+            y = int((1.0 - (level - _RANGE_MIN) / (_RANGE_MAX - _RANGE_MIN)) * (out_h - 1))
+            line_color = tuple(_GRATICULE_COLOR_KEY.tolist()) if level in (0, 100) else tuple(_GRATICULE_COLOR.tolist())
+            draw.line([(0, y), (out_w - 1, y)], fill=line_color)
+            draw.text((2, y - 9), f"{level}%", fill=_LABEL_COLOR, font=_FONT)
+        cached = np.array(img)
+        _canvas_cache[key] = cached
+    return cached.copy()  # callers draw histogram bars directly onto the result
 
 
 def _col_hist(data: np.ndarray, out_w: int, h: int) -> np.ndarray:
@@ -170,6 +181,48 @@ def _luma(frame: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
 # Vectorscope
 # ---------------------------------------------------------------------------
 
+# Static layers (rings/crosshair + 75 % target boxes/labels) never change —
+# computed once and reused. Boxes/labels are cached as a mask + color array
+# (instead of re-running PIL draw calls every frame, measured ~34ms/frame)
+# so they can still be composited *after* the dynamic trace, matching the
+# original draw order exactly.
+_vector_static_cache: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
+
+
+def _vector_static_layers() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return (rings_and_crosshair, box_mask, box_rgb) — built once, cached."""
+    global _vector_static_cache
+    if _vector_static_cache is not None:
+        return _vector_static_cache
+
+    base = np.zeros((256, 256, 3), dtype=np.uint8)
+    ys, xs = np.ogrid[:256, :256]
+    dist = np.sqrt((xs - 128.0) ** 2 + (ys - 128.0) ** 2)
+    for pct in range(10, 101, 10):
+        mask = np.abs(dist - 128.0 * pct / 100.0) < 0.7
+        base[mask] = _RING_COLOR
+    base[128, :] = _RING_COLOR
+    base[:, 128] = _RING_COLOR
+
+    box_canvas = np.zeros((256, 256, 3), dtype=np.uint8)
+    img  = Image.fromarray(box_canvas)
+    draw = ImageDraw.Draw(img)
+    for name, tcb, tcr, color in _VECTOR_TARGETS:
+        cy = 255 - tcr   # invert: high Cr at top
+        draw.rectangle([tcb - 3, cy - 3, tcb + 3, cy + 3], outline=color)
+        # Label offset away from centre
+        dx, dy = tcb - 128, cy - 128
+        length = max(1.0, (dx ** 2 + dy ** 2) ** 0.5)
+        lx = int(tcb + dx / length * 13)
+        ly = int(cy  + dy / length * 13) - 4
+        draw.text((lx, ly), name, fill=color, font=_FONT)
+    box_rgb = np.array(img)
+    box_mask = np.any(box_rgb != 0, axis=2)
+
+    _vector_static_cache = (base, box_mask, box_rgb)
+    return _vector_static_cache
+
+
 def vectorscope(frame: np.ndarray, out_size: int = 256) -> np.ndarray:
     """Return a (out_size, out_size, 3) uint8 vectorscope image."""
     fr = frame[:, :, 0].astype(np.float32)
@@ -187,19 +240,8 @@ def vectorscope(frame: np.ndarray, out_size: int = 256) -> np.ndarray:
     trace = np.clip(acc / cap, 0.0, 1.0)
     trace = (trace[::-1] * 210).astype(np.uint8)   # flip: high Cr (red) at top
 
-    # --- Graticule on black canvas ---
-    canvas = np.zeros((256, 256, 3), dtype=np.uint8)
-
-    # Saturation rings every 10 % — 100 % = radius 128 px
-    ys, xs = np.ogrid[:256, :256]
-    dist = np.sqrt((xs - 128.0) ** 2 + (ys - 128.0) ** 2)
-    for pct in range(10, 101, 10):
-        mask = np.abs(dist - 128.0 * pct / 100.0) < 0.7
-        canvas[mask] = _RING_COLOR
-
-    # Crosshair through neutral (Cb=128, Cr=128)
-    canvas[128, :] = _RING_COLOR
-    canvas[:, 128] = _RING_COLOR
+    rings_and_crosshair, box_mask, box_rgb = _vector_static_layers()
+    canvas = rings_and_crosshair.copy()
 
     # --- Overlay the signal trace (green channel only; overrides graticule) ---
     trace_on = trace > 5
@@ -207,19 +249,8 @@ def vectorscope(frame: np.ndarray, out_size: int = 256) -> np.ndarray:
     canvas[trace_on, 1] = trace[trace_on]
     canvas[trace_on, 2] = 0
 
-    # --- 75 % target boxes + labels (PIL) ---
-    img  = Image.fromarray(canvas)
-    draw = ImageDraw.Draw(img)
-    for name, tcb, tcr, color in _VECTOR_TARGETS:
-        cy = 255 - tcr   # invert: high Cr at top
-        draw.rectangle([tcb - 3, cy - 3, tcb + 3, cy + 3], outline=color)
-        # Label offset away from centre
-        dx, dy = tcb - 128, cy - 128
-        length = max(1.0, (dx ** 2 + dy ** 2) ** 0.5)
-        lx = int(tcb + dx / length * 13)
-        ly = int(cy  + dy / length * 13) - 4
-        draw.text((lx, ly), name, fill=color, font=_FONT)
-    canvas = np.array(img)
+    # --- 75 % target boxes + labels on top (cached) ---
+    canvas[box_mask] = box_rgb[box_mask]
 
     if out_size != 256:
         canvas = np.array(Image.fromarray(canvas).resize((out_size, out_size), Image.NEAREST))

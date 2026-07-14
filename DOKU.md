@@ -1,6 +1,6 @@
 # DOKU — smart-reset-browser
 
-**Last updated:** 2026-04-12
+**Last updated:** 2026-07-14
 
 Technical architecture and implementation reference.
 
@@ -35,7 +35,7 @@ smart-reset-browser/
 ├── camera_plugins/
 │   ├── panasonic/
 │   │   ├── transport.py     # HTTP CGI, UDP discovery, model detection (AW- and AK- series)
-│   │   ├── base.py          # Shared helpers
+│   │   ├── base.py          # Shared helpers (incl. delete_presets())
 │   │   ├── aw_*.py          # Per-model reset modules (AW- series)
 │   │   └── ak_*.py          # Per-model reset modules (AK- series)
 │   └── birddog/
@@ -45,9 +45,7 @@ smart-reset-browser/
 │
 ├── smart_reset/
 │   ├── camera_state.py      # CameraSession — singleton session state
-│   ├── discovery.py         # Panasonic UDP discovery
-│   ├── http_client.py       # send_command(), is_success_response()
-│   └── reset_worker.py      # Legacy reset path (Panasonic camera_types fallback)
+│   └── discovery.py         # Panasonic UDP discovery
 │
 ├── ndi/
 │   ├── ndi_input.py         # NDI 6 SDK ctypes wrapper
@@ -77,10 +75,14 @@ Stored as a singleton in `app.state.session`. Never duplicated elsewhere.
 
 Key fields:
 - `ip`, `port`, `connected`, `camera_id`, `session_id`
-- `reset_in_progress`, `balance_in_progress`, `connect_in_progress`, `scan_in_progress`
+- `reset_in_progress`, `preset_delete_in_progress`, `balance_in_progress`, `connect_in_progress`, `scan_in_progress`
+- `balance_token: int` — incremented to cancel stale ABB/AWW completion polls
 - `feature_states: dict[str, bool]` — toggle button states
 - `dropdown_selections: dict[str, str]` — current dropdown selections (plugin modules)
+- `c_temp_command_map`, `gamma_command_map`, `lmatrix_command_map: dict[str, str]` — label→command maps for legacy color-temp/gamma/linear-matrix dropdowns, paired with `c_temp_selection`, `gamma_selection`, `lmatrix_selection: str`
 - `discovered_cameras: list[dict]` — results of last network scan
+
+`reset_connection()` clears all connection-specific fields on disconnect/failed connect.
 
 ---
 
@@ -95,7 +97,9 @@ Key fields:
 | `POST` | `/api/camera/connect` | HTML fragment | Connect (body: `ip`, `port`) |
 | `POST` | `/api/camera/disconnect` | HTML fragment | Disconnect |
 | `POST` | `/api/camera/reset` | HTML fragment | Start reset sequence |
+| `POST` | `/api/camera/delete-presets` | HTML fragment | Delete presets in range (Panasonic UE-series only) |
 | `POST` | `/api/camera/feature/{key}` | HTML fragment | Toggle feature (body: `enabled`) |
+| `POST` | `/api/camera/cycle/{key}` | HTML fragment | Advance an N-state cycle button to its next state |
 | `POST` | `/api/camera/trigger/{key}` | HTML fragment | One-shot command |
 | `POST` | `/api/camera/dropdown/{key}` | HTML fragment | Set dropdown (body: `label`) |
 | `POST` | `/api/camera/balance/{key}` | HTML fragment | Start ABB / AWW |
@@ -114,12 +118,13 @@ All messages are JSON.
 |------------|--------|---------|
 | `log` | `text` | Every log line |
 | `reset_done` | `status`, `ok`, `failed` | Reset complete |
+| `preset_delete_done` | `status`, `ok`, `failed` | Preset delete complete (own route/task, independent of reset — see Reset flow) |
 | `balance_done` | — | ABB/AWW complete |
 | `camera_connected` | `ip`, `camera_id` | Successful connect |
 | `camera_disconnected` | — | Disconnect |
 
 Client reacts:
-- `reset_done` / `balance_done` → `htmx.trigger('#camera-panel', 'refreshPanel')`
+- `reset_done` / `balance_done` / `preset_delete_done` → `htmx.trigger('#camera-panel', 'refreshPanel')`
 - `camera_connected` → `ndiSyncConnect(ip)` if sync enabled
 - `camera_disconnected` → `ndiSyncDisconnect()` if sync enabled
 
@@ -135,11 +140,13 @@ Loaded from `lib/ndi/` — no SDK installation required.
 Public API:
 ```python
 is_available() -> bool
-list_sources(timeout_ms=3000) -> list[str]
+list_sources(timeout_ms=50) -> list[dict]            # {name, ip} — reads a warm, process-lifetime finder
 grab_frame(ndi_name, timeout_ms=5000) -> np.ndarray   # (H, W, 3) RGB uint8
 NDIFrameStream(ndi_name)                               # context manager, continuous
 encode_jpeg(frame, width=640, quality=70) -> bytes
 ```
+
+`list_sources()` reads a live snapshot off a single `NDIlib_find_v2` finder created once at module import and kept alive for the process lifetime, instead of creating/destroying a finder per call — cuts typical response time from up to 5s (cold discovery) to ~0.2s (warm snapshot). See CLAUDE.md's "NDI source discovery" section for details.
 
 NDI connection takes ~3–4 seconds for the first frame — normal SDK behaviour.
 
@@ -194,16 +201,27 @@ Client sends plain text (`"parade"` / `"overlay"` / `"luma"`) to switch waveform
 | `DISPLAY_NAME` | `str` | Human-readable model name |
 | `PROTOCOL` | `str` | `"panasonic"` or `"birddog"` (default: `"panasonic"`) |
 | `UI_LAYOUT` | `list[tuple]` | `[(btn1, btn2, btn3, dropdown_key), ...]` per row |
-| `UI_BUTTONS` | `dict` | Toggle: `{key: {"on": cmd, "off": cmd}}` / Trigger: `{key: {"cmd": cmd}}` |
+| `UI_BALANCE_DROPDOWN` | `str \| None` | Dropdown key to render in the trailing slot of the ABB/AWW balance-button row, next to AWW (optional, default `None`) |
+| `UI_BUTTONS` | `dict` | Toggle: `{key: {"on": cmd, "off": cmd}}` / Trigger: `{key: {"cmd": cmd}}` / Cycle: `{key: {"cycle": [{"label": str, "cmd": [cmd, ...]}, ...]}}` |
 | `UI_BUTTON_LABELS` | `dict` | Display names |
 | `UI_BUTTON_CONDITIONS` | `dict` | Trigger enable condition: `{key: {"dropdown": k, "value": v}}` |
 | `UI_BUTTON_DROPDOWN_SYNC` | `dict` | `{btn: {True: {dd: label}, False: {dd: label}}}` |
+| `UI_DROPDOWN_CONDITIONS` | `dict` | `{dropdown_key: [button_key, ...]}` — dropdown disabled unless at least one listed button's feature state is `True` |
+| `UI_LAYOUT` dropdown order | — | Convention (not a field): all Panasonic modules order their `UI_LAYOUT` dropdown column top-to-bottom as Gamma/Gamma Mode → Matrix Preset/Matrix Type → Linear Matrix → Color Temp, including only the types that module actually has. See CLAUDE.md's "Advanced Controls dropdown order" section. |
 | `UI_DROPDOWNS` | `dict` | `{key: [(label, cmd), ...]}` |
 | `UI_FEATURE_QUERIES` | `dict` | Poll current feature state on connect |
 | `UI_FEATURE_RESPONSE_MAP` | `dict` | Parse poll response |
 | `UI_DROPDOWN_QUERIES` | `dict` | Poll current dropdown on connect |
 | `UI_DROPDOWN_RESPONSE_MAP` | `dict` | Parse poll response |
+| `SUPPORTS_PRESET_DELETE` | `bool` | Panasonic UE-series + HE-series/HR140 (not AK-UB300) — enables the Delete Presets range/all controls + button next to Reset Camera; gates `start_delete_presets()` in `web/app.py` |
+| `SUPPORTS_PRESET_DELETE_NAME_THUMBNAIL` | `bool` | UE-series only — also delete Preset Name/Thumbnail (`OSJ:36/37/3A/3B`), not just Preset Memory (`#C[nn]`); passed explicitly to `base.delete_presets()` |
+| `SUPPORTS_OSD_TOGGLE` | `bool` | Panasonic only — stateful ON/OFF OSD button (`DUS:1`/`DUS:0` + `QUS` query) via the generic feature-toggle machinery |
+| `SUPPORTS_OSD_TRIGGER` | `bool` | BirdDog only — stateless "Toggle OSD" button (no query endpoint exists) via the generic trigger route |
 | `run_reset(context)` | `function` | Optional custom reset flow |
+
+### Plugin loader (optional matching-plugin extension)
+
+`web/app.py`'s `on_startup` checks the `SMART_RESET_PLUGIN` env var; if set, it adds that path to `sys.path`, imports a module named `matching_plugin`, and mounts `matching_plugin.router` on the app (`app.include_router(...)`). The plugin reads `app.state.session`/`app.state.registry` directly — no other core changes. Its routes (`/api/matching/status`, `/api/matching/capture`, `/api/matching/correct`) are **not** part of this repo's route table; they only exist when the env var is set.
 
 ### Connect flow
 
@@ -219,10 +237,20 @@ Client sends plain text (`"parade"` / `"overlay"` / `"luma"`) to switch waveform
 ### Reset flow
 
 1. `POST /api/camera/reset`
-2. Background task via `ThreadPoolExecutor`
-3. `ResetEngine.run()` → `module.run_reset(context)` (plugin path)
-4. After reset: `_sync_feature_states()` re-polls camera
+2. `session.reset_in_progress = True`; background task via `ThreadPoolExecutor`
+3. `ResetEngine.run()` → `module.run_reset(context)` (plugin path) — clears `reset_in_progress` itself in its own `finally` block
+4. `_sync_feature_states()` re-polls camera
 5. `reset_done` WS event broadcast
+
+Post-reset target feature states (`POST_RESET_FEATURE_STATES` per module) send every Panasonic camera to Auto Iris = ON and Auto Focus = ON after reset. See CLAUDE.md's "Post-reset target state" section for the AW-UE150A DRS/Knee corrections and why AK-UB300 has no Auto Focus entry.
+
+### Preset delete flow (independent of reset)
+
+1. `POST /api/camera/delete-presets` — `_parse_preset_range(form)` reads the range/all fields; route returns an error fragment if the module lacks `SUPPORTS_PRESET_DELETE`
+2. `session.preset_delete_in_progress = True`; both `reset_in_progress` and `preset_delete_in_progress` are checked on entry to `start_reset()`/`start_delete_presets()` so the two actions can't overlap; background task via `ThreadPoolExecutor`
+3. `base.delete_presets(transport, ip, port, start, end, should_abort, include_name_thumbnail)` runs in the executor — `include_name_thumbnail` derived from `SUPPORTS_PRESET_DELETE_NAME_THUMBNAIL`
+4. `session.preset_delete_in_progress = False` (unless the session went stale in the meantime)
+5. `preset_delete_done` WS event broadcast with `ok`/`failed`/`status`
 
 ---
 
@@ -256,7 +284,7 @@ Enabling shows a popup with the exact path and a mailto link to support.
 
 ## PyInstaller Notes
 
-- `sys.frozen` check in startup — explicit module name lists for `camera_plugins/`; Panasonic loaded in two passes (`aw_*` and `ak_*`)
+- `sys.frozen` check in `web/app.py`'s `on_startup` — explicit frozen-module-name lists per `registry.load_package(...)` call, one pass each for Panasonic AW- (`aw_*`), Panasonic AK- (`ak_*`), and BirdDog (`p*`); `web_main.py` itself has no plugin-module knowledge
 - Templates, static files, and `lib/ndi/` embedded via `--add-data`
 - Single-instance enforced via Windows named mutex
 - System tray via `pystray`; stdout/stderr redirected to `/dev/null` when frozen

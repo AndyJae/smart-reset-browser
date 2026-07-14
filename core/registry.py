@@ -5,19 +5,18 @@ Zwei getrennte Registries in einer Klasse:
   - Modulregistry:    CAMERA_ID → Kameramodul (inkl. CAMERA_ID_ALIASES)
   - Transportregistry: protocol-string → CameraProtocol-Instanz
 
-Ersetzt langfristig camera_loader.py. Wird einmalig beim Startup befüllt
-und als Singleton in app.state.registry abgelegt.
+Wird einmalig beim Startup befüllt und als Singleton in app.state.registry abgelegt.
 
 Verwendung:
 
     # Startup (app.py):
     registry = PluginRegistry()
-    registry.load_package("camera_types", module_prefix="camera_")
+    registry.load_package("camera_plugins.panasonic", module_prefix="aw_")
     registry.register_transport("panasonic", PanasonicTransport())
     app.state.registry = registry
 
     # In Routen / Workern:
-    module = registry.resolve_module("AW-UE160")       # → camera_aw_ue160
+    module = registry.resolve_module("AW-UE160")       # → camera_plugins.panasonic.aw_ue160
     transport = registry.resolve_transport("panasonic") # → PanasonicTransport
 """
 
@@ -165,7 +164,7 @@ class PluginRegistry:
         return dict(self._transports)
 
     # -----------------------------------------------------------------------
-    # Bulk-Loader (ersetzt camera_loader.py)
+    # Bulk-Loader
     # -----------------------------------------------------------------------
 
     def load_package(
@@ -182,8 +181,8 @@ class PluginRegistry:
           - PyInstaller:   frozen_names — explizite Namensliste (sys.frozen=True)
 
         Parameter:
-            package_name    Name des Packages, z. B. "camera_types" oder
-                            "camera_plugins.panasonic"
+            package_name    Name des Packages, z. B. "camera_plugins.panasonic"
+                            oder "camera_plugins.birddog"
             module_prefix   Nur Module mit diesem Präfix werden geladen,
                             z. B. "camera_" oder "aw_"
             frozen_names    Explizite Modulliste für PyInstaller-Bundle,

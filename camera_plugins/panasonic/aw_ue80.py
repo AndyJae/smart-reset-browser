@@ -20,6 +20,9 @@ from camera_plugins.panasonic.base import (
 
 CAMERA_ID    = "AW-UE80"
 DISPLAY_NAME = "Panasonic AW-UE80"
+SUPPORTS_PRESET_DELETE = True
+SUPPORTS_PRESET_DELETE_NAME_THUMBNAIL = True
+SUPPORTS_OSD_TOGGLE = True
 
 RESET_COMMANDS = [
     ("ATW TARGET R", "OSJ", "0D", "80"),
@@ -78,6 +81,7 @@ UI_BUTTONS = {
     "awb_black":  {"cmd": "OAS"},
     "aww_white":  {"cmd": "OWS"},
     "drs":        {"on": "OSE:33:1", "off": "OSE:33:0"},
+    "osd":        {"on": "DUS:1",    "off": "DUS:0"},
     "white_clip": {"on": "OSA:2E:1", "off": "OSA:2E:0"},
 }
 
@@ -85,14 +89,15 @@ UI_BUTTON_LABELS = {
     "auto_focus": "Auto Focus",
     "auto_iris":  "Auto Iris",
     "drs":        "DRS",
+    "osd":        "OSD",
     "white_clip": "White Clip",
     "awb_black":  "ABB (Black)",
     "aww_white":  "AWW (White)",
 }
 
 UI_LAYOUT = [
-    ("drs",        "auto_iris", "auto_focus", "color_temp"),
-    ("white_clip", "awb_black", "aww_white",  "gamma"),
+    ("drs",        "auto_iris", "auto_focus", "gamma"),
+    ("white_clip", None,        None,         "color_temp"),
 ]
 
 UI_DROPDOWNS = {
@@ -124,6 +129,7 @@ UI_FEATURE_QUERIES = {
     "auto_focus": "QAF",
     "auto_iris":  "QRS",
     "drs":        "QSE:33",
+    "osd":        "QUS",
     "white_clip": "QSA:2E",
 }
 
@@ -132,9 +138,26 @@ UI_DROPDOWN_QUERIES = {
     "gamma":      "QSJ:D7",
 }
 
+POST_RESET_FEATURE_STATES = [
+    ("auto_iris",  True),
+    ("auto_focus", True),
+    ("drs",        False),
+    ("white_clip", False),
+]
+
 POST_RESET_DROPDOWN_DEFAULTS = {
     "color_temp": "White Balance is ATW",
+    "gamma":      "Gamma is HD",
 }
+
+POST_RESET_STATUS_QUERIES = [
+    ("Auto Iris",  "QRS"),
+    ("Auto Focus", "QAF"),
+    ("DRS",        "QSE:33"),
+    ("White Clip", "QSA:2E"),
+    ("White Balance Mode", "QAW"),
+    ("Gamma Mode", "QSJ:D7"),
+]
 
 # ---------------------------------------------------------------------------
 # Command key sets

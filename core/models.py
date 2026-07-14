@@ -47,7 +47,7 @@ class ResetResult:
     """
     Ergebnis einer abgeschlossenen Reset-Sequenz.
 
-    Wird von run_reset_worker() zurückgegeben und als WebSocket-Event
+    Wird von ResetEngine.run() zurückgegeben und als WebSocket-Event
     {"type": "reset_done", "status": ..., "ok": N, "failed": N} gesendet.
 
     Felder:

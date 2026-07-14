@@ -19,6 +19,8 @@ from camera_plugins.panasonic.base import (
 CAMERA_ID         = "AW-HE120"
 CAMERA_ID_ALIASES = ["AW-HE125", "AW-HE120W", "AW-HE120K"]
 DISPLAY_NAME      = "Panasonic AW-HE120"
+SUPPORTS_OSD_TOGGLE = True
+SUPPORTS_PRESET_DELETE = True
 
 # ---------------------------------------------------------------------------
 # RESET_COMMANDS
@@ -117,6 +119,7 @@ UI_BUTTONS = {
     "aww_white":  {"cmd": "OWS"},
     "drs":        {"on": "OSE:33:1", "off": "OSE:33:0"},
     "knee":       {"on": "OSA:2D:1", "off": "OSA:2D:0"},
+    "osd":        {"on": "DUS:1",    "off": "DUS:0"},
     "white_clip": {"on": "OSA:2E:1", "off": "OSA:2E:0"},
 }
 
@@ -125,6 +128,7 @@ UI_BUTTON_LABELS = {
     "auto_iris":  "Auto Iris",
     "drs":        "DRS",
     "knee":       "Knee",
+    "osd":        "OSD",
     "white_clip": "White Clip",
     "awb_black":  "ABB (Black)",
     "aww_white":  "AWW (White)",
@@ -132,7 +136,7 @@ UI_BUTTON_LABELS = {
 
 UI_LAYOUT = [
     ("knee",       "drs",        "auto_iris",  "gamma"),
-    ("white_clip", "auto_focus", "awb_black",  "color_temp"),
+    ("white_clip", "auto_focus", None,         "color_temp"),
 ]
 
 UI_DROPDOWNS = {
@@ -164,6 +168,7 @@ UI_FEATURE_QUERIES = {
     "auto_iris":  "QRS",
     "drs":        "QSE:33",
     "knee":       "QSA:2D",
+    "osd":        "QUS",
     "white_clip": "QSA:2E",
 }
 
@@ -174,7 +179,7 @@ UI_DROPDOWN_QUERIES = {
 
 POST_RESET_FEATURE_STATES = [
     ("auto_iris",  True),
-    ("auto_focus", False),
+    ("auto_focus", True),
     ("drs",        False),
     ("knee",       False),
     ("white_clip", False),

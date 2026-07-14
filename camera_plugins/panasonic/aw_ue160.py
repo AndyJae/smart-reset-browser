@@ -12,22 +12,25 @@ from camera_plugins.panasonic.base import (
     build_entries as _build_entries,
     ensure_dropdown_value as _ensure_dropdown_value,
     ensure_feature_state as _ensure_feature_state,
-    extract_value as _extract_value,
     filter_entries as _filter_entries,
-    query_raw as _query_raw,
     send_set_command as _send_set_command,
     skip_reset_commands as _skip_reset_commands,
 )
 
 CAMERA_ID    = "AW-UE160"
 DISPLAY_NAME = "Panasonic AW-UE160"
+SUPPORTS_PRESET_DELETE = True
+SUPPORTS_PRESET_DELETE_NAME_THUMBNAIL = True
+SUPPORTS_OSD_TOGGLE = True
 
 RESET_COMMANDS = [
     ("CAMERA GAIN", "OSL", "25", "08"),
+    ("AGC", "OSL", "26", "0"),
     ("ATW", "OSL", "2A", "1"),
     ("ATW TARGET R", "OSJ", "0D", "80"),
     ("ATW TARGET B", "OSJ", "0E", "80"),
     ("ATW", "OSL", "2A", "0"),
+    ("SHOCKLESS WB SW", "OSL", "2C", "0"),
     ("CHROMA LEVEL", "OSG", "93", "1"),
     ("CHROMA LEVEL", "OSL", "B0", "80"),
     ("CHROMA LEVEL", "OSG", "93", "0"),
@@ -50,14 +53,12 @@ RESET_COMMANDS = [
     ("KNEE B SLOPE", "OSA", "27", "80"),
     ("KNEE", "OSA", "2D", "0"),
     ("MASTER DETAIL", "OSA", "30", "80"),
-    ("V DETAIL LEVEL", "OSJ", "17", "80"),
-    ("V DETAIL FREQUENCY", "OSL", "53", "00"),
-    ("LEVEL DEPENDENT", "OSD", "26", "00"),
-    ("KNEE APERTURE LEVEL", "OSG", "3F", "02"),
+    ("LEVEL DEPENDENT", "OSD", "26", "08"),
+    ("KNEE APERTURE LEVEL", "OSG", "3F", "00"),
     ("DETAIL GAIN (+)", "OSA", "38", "80"),
     ("DETAIL GAIN (-)", "OSA", "39", "80"),
-    ("DNR", "OSD", "3A", "00"),
-    ("PRESET MATRIX", "OSE", "31", "0"),
+    ("DNR", "OSD", "3A", "01"),
+    ("PRESET MATRIX", "OSE", "31", "4"),
     ("MATRIX COLOUR CORRECT", "OSA", "84", "1"),
     ("MATRIX COLOUR CORRECT", "OSL", "6C", "1"),
     ("MATRIX COLOUR CORRECT", "OSA", "85", "1"),
@@ -112,7 +113,14 @@ RESET_COMMANDS = [
     ("B GAIN BCH", "OSL", "3E", "800"),
     ("RGB GAIN OFFSET ACH", "OSJ", "0C", "0"),
     ("RGB GAIN OFFSET BCH", "OSL", "3F", "0"),
+    ("COLOR TEMP R GAIN ACH", "OSJ", "4B", "800"),
+    ("COLOR TEMP B GAIN ACH", "OSJ", "4C", "800"),
+    ("COLOR TEMP G AXIS ACH", "OSJ", "4D", "800"),
+    ("COLOR TEMP R GAIN BCH", "OSL", "32", "800"),
+    ("COLOR TEMP B GAIN BCH", "OSL", "33", "800"),
+    ("COLOR TEMP G AXIS BCH", "OSL", "34", "800"),
     ("SHUTTER", "OSG", "59", "0"),
+    ("FRAME MIX SW", "OSL", "27", "0"),
     ("SKIN TONE DETAIL", "OSA", "40", "0"),
     ("MASTER WHITE CLIP LEVEL", "OSA", "2A", "6D"),
     ("R WHITE CLIP LEVEL", "OSL", "47", "80"),
@@ -141,18 +149,28 @@ UI_BUTTONS = {
     "drs":           {"on": "OSA:0D:1", "off": "OSA:0D:0"},
     "flare":         {"on": "OSA:11:1", "off": "OSA:11:0"},
     "gamma":         {"on": "OSA:0A:1", "off": "OSA:0A:0"},
-    "knee":          {"on": "OSL:45:1", "off": "OSL:45:0"},
+    "knee": {
+        "cycle": [
+            {"label": "OFF",     "cmd": ["OSL:45:0"]},
+            {"label": "Manual",  "cmd": ["OSL:45:1", "OSA:2D:1"]},
+            {"label": "Auto",    "cmd": ["OSL:45:1", "OSA:2D:2"]},
+        ],
+    },
     "linear_matrix": {"on": "OSL:6C:1", "off": "OSL:6C:0"},
     "matrix":        {"on": "OSA:84:1", "off": "OSA:84:0"},
+    "osd":           {"on": "DUS:1",    "off": "DUS:0"},
     "white_clip":    {"on": "OSA:2E:1", "off": "OSA:2E:0"},
 }
 
 UI_LAYOUT = [
     # (btn1,        btn2,         btn3,            dropdown_key)
     ('knee',        'flare',      'gamma',          'gamma'),
-    ('drs',         'auto_iris',  'auto_focus',     'color_temp'),
+    ('drs',         'auto_iris',  'auto_focus',     'matrix_preset'),
     ('white_clip',  'matrix',     'linear_matrix',  'linear_matrix'),
 ]
+
+# Rendered in the trailing slot of the ABB/AWW balance-button row, next to AWW.
+UI_BALANCE_DROPDOWN = "color_temp"
 
 UI_BUTTON_LABELS = {
     "auto_focus":    "Auto Focus",
@@ -163,6 +181,7 @@ UI_BUTTON_LABELS = {
     "knee":          "Knee",
     "linear_matrix": "Linear Matrix",
     "matrix":        "Matrix",
+    "osd":           "OSD",
     "white_clip":    "White Clip",
     "awb_black":     "ABB (Black)",
     "aww_white":     "AWW (White)",
@@ -187,6 +206,13 @@ UI_DROPDOWNS = {
         ("Linear Matrix Table is A", "OSA:00:0"),
         ("Linear Matrix Table is B", "OSA:00:1"),
     ],
+    "matrix_preset": [
+        ("Matrix Preset is Normal",  "OSE:31:0"),
+        ("Matrix Preset is Cinema1", "OSE:31:1"),
+        ("Matrix Preset is Cinema2", "OSE:31:2"),
+        ("Matrix Preset is User",    "OSE:31:3"),
+        ("Matrix Preset is HD",      "OSE:31:4"),
+    ],
 }
 
 AWW_REQUIRED_OPTIONS = ["White Balance is AWB A", "White Balance is AWB B"]
@@ -204,9 +230,9 @@ UI_FEATURE_QUERIES = {
     "drs":           "QSA:0D",
     "flare":         "QSA:11",
     "gamma":         "QSA:0A",
-    "knee":          "QSL:45",
     "matrix":        "QSA:84",
     "linear_matrix": "QSL:6C",
+    "osd":           "QUS",
     "white_clip":    "QSA:2E",
 }
 
@@ -214,6 +240,15 @@ UI_DROPDOWN_QUERIES = {
     "color_temp":    "QAW",
     "gamma":         "QSJ:D7",
     "linear_matrix": "QSA:00",
+    "matrix_preset": "QSE:31",
+}
+
+# Each dropdown only applies while its own toggle is switched on — grey it
+# out until that specific toggle is enabled.
+UI_DROPDOWN_CONDITIONS = {
+    "linear_matrix": ["linear_matrix"],
+    "matrix_preset": ["matrix"],
+    "gamma":         ["gamma"],
 }
 
 PRE_RESET_FEATURE_STATES = [
@@ -224,7 +259,6 @@ PRE_RESET_FEATURE_STATES = [
 POST_RESET_FEATURE_STATES = [
     ("auto_iris",  True),
     ("auto_focus", True),
-    ("knee",       True),
     ("flare",      True),
     ("gamma",      True),
     ("white_clip", True),
@@ -260,10 +294,10 @@ _GAMMA_KEYS        = {
     ("OSI", "35"), ("OSI", "36"), ("OSJ", "D7"),
     ("OSA", "6A"), ("OSA", "0B"), ("OSA", "07"), ("OSJ", "1B"),
 }
-_KNEE_KEYS         = {("OSA", "22"), ("OSA", "23"), ("OSA", "26"), ("OSA", "27")}
+_KNEE_KEYS         = {("OSA", "22"), ("OSA", "23"), ("OSA", "26"), ("OSA", "27"), ("OSA", "2D")}
 _WHITE_CLIP_KEYS   = {("OSA", "2A"), ("OSL", "47"), ("OSL", "48")}
 _DETAIL_KEYS       = {
-    ("OSA", "30"), ("OSJ", "17"), ("OSL", "53"),
+    ("OSA", "30"),
     ("OSD", "26"), ("OSG", "3F"), ("OSA", "38"), ("OSA", "39"),
 }
 _DNR_KEYS          = {("OSD", "3A")}
@@ -385,6 +419,8 @@ def _run_reset_sequence(context, prep: dict) -> None:
                 context, knee,
                 "could not verify KNEE and non-AUTO KNEE MODE"
             )
+        if blockers_ready:
+            _send_set_command(context, "KNEE MODE", "OSA:2D:2")
         _mark(knee)
 
     if white_clip:

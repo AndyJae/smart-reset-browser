@@ -179,6 +179,8 @@ a.sidebar-logo { text-decoration: none; display: block; }
   gap: 10px;
   flex-wrap: wrap;
 }
+.push-right { margin-left: auto; }
+.btn.push-right { width: auto; min-width: 90px; }
 .form-label {
   font-size: 12px;
   color: var(--text-dim);
@@ -217,6 +219,21 @@ a.sidebar-logo { text-decoration: none; display: block; }
 .status-dot.connected    { background: var(--success); box-shadow: 0 0 5px var(--success); }
 .status-dot.disconnected { background: var(--text-dim); }
 
+.btn-row-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 0 4px;
+}
+.preset-delete-divider {
+  margin: 0 16px;
+}
+.preset-delete-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ===== Buttons ===== */
 .btn-row {
   display: flex;
@@ -254,13 +271,6 @@ a.sidebar-logo { text-decoration: none; display: block; }
 }
 .btn-secondary:hover:not(:disabled) { background: var(--bg-input); }
 
-.btn-danger {
-  background: var(--danger);
-  color: #fff;
-  border-color: var(--danger);
-}
-.btn-danger:hover:not(:disabled) { background: var(--danger-dk); border-color: var(--danger-dk); }
-
 /* Reset Camera — rot aktiv (verbunden), ausgegraut mit Rahmen (nicht verbunden) — wie V23 */
 .btn-reset-active {
   background: #c0392b;
@@ -290,27 +300,6 @@ a.sidebar-logo { text-decoration: none; display: block; }
   flex-direction: column;
   gap: 8px;
 }
-/* Flexible wrap row for feature toggle buttons */
-.adv-row-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.adv-row-wrap .btn-feature {
-  flex: 1 1 140px;
-}
-/* Single dropdown row */
-.adv-row-dropdown {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.adv-row-dropdown .form-label {
-  min-width: 100px;
-}
-.adv-row-dropdown .select-dropdown {
-  flex: 1;
-}
 /* Legacy grid row (balance buttons) */
 .adv-row {
   display: grid;
@@ -335,25 +324,9 @@ a.sidebar-logo { text-decoration: none; display: block; }
   border-color: var(--accent);
   color: var(--accent);
 }
-.disabled-placeholder {
-  visibility: hidden;
-  pointer-events: none;
-}
 .select-dropdown {
   width: 100%;
   cursor: pointer;
-}
-
-/* ===== Banners ===== */
-.banner {
-  padding: 8px 12px;
-  border-radius: 5px;
-  font-size: 13px;
-}
-.banner-error {
-  background: color-mix(in srgb, var(--danger) 15%, var(--bg-panel));
-  border: 1px solid var(--danger);
-  color: #ff9090;
 }
 
 /* ===== Log section ===== */

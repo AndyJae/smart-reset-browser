@@ -15,6 +15,7 @@ class CameraSession:
 
         self.connect_in_progress: bool = False
         self.reset_in_progress: bool = False
+        self.preset_delete_in_progress: bool = False
         self.balance_in_progress: bool = False
         self.scan_in_progress: bool = False
 
@@ -34,6 +35,7 @@ class CameraSession:
             "matrix": False,
             "linear_matrix": False,
             "white_clip": False,
+            "osd": False,
         }
 
         # Command maps populated after connect via _configure_advanced_controls.
@@ -50,6 +52,9 @@ class CameraSession:
         # Generic dropdown selections for plugin modules (key → selected label).
         self.dropdown_selections: dict[str, str] = {}
 
+        # Current index into a UI_BUTTONS[key]["cycle"] list, for N-state cycle buttons.
+        self.cycle_states: dict[str, int] = {}
+
         # Cameras found during last UDP scan.
         self.discovered_cameras: list[dict] = []
 
@@ -59,6 +64,7 @@ class CameraSession:
         self.camera_id = None
         self.connect_in_progress = False
         self.reset_in_progress = False
+        self.preset_delete_in_progress = False
         self.balance_in_progress = False
         self.session_id = 0
         self.balance_token += 1
@@ -69,3 +75,4 @@ class CameraSession:
         self.gamma_selection = ""
         self.lmatrix_selection = ""
         self.dropdown_selections = {}
+        self.cycle_states = {}

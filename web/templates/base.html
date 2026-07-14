@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>smart-reset</title>
-  <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=14">
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
 </head>
 <body>
@@ -71,6 +71,28 @@
   </div>
 </div>
 
+<!-- ERROR MODAL -->
+<div id="error-modal" class="modal-overlay" onclick="closeErrorModal(event)">
+  <div class="modal-box modal-box-sm">
+    <h2>Error</h2>
+    <div class="modal-scroll">
+      <p id="error-modal-message"></p>
+    </div>
+    <button class="btn btn-primary" onclick="closeErrorModal()">OK</button>
+  </div>
+</div>
+
+<!-- PRESET DELETE ALL MODAL -->
+<div id="preset-delete-all-modal" class="modal-overlay" onclick="closePresetDeleteAllInfo(event)">
+  <div class="modal-box modal-box-sm">
+    <h2>Delete All Presets</h2>
+    <div class="modal-scroll">
+      <p>Deleting all presets can take a bit longer — please wait for the reset to finish.</p>
+    </div>
+    <button class="btn btn-primary" onclick="closePresetDeleteAllInfo()">OK</button>
+  </div>
+</div>
+
 <!-- HELP MODAL -->
 <div id="help-modal" class="modal-overlay" onclick="closeHelp(event)">
   <div class="modal-box">
@@ -85,8 +107,15 @@
       <p><strong>Connect</strong> — establishes a connection. If the IP field is empty and scan results are available,
       Connect automatically uses the first discovered camera. You can still enter IP/port manually at any time.</p>
 
+      <p><strong>OSD</strong> — available for supported camera models next to Scan Network. Toggles the camera's
+      on-screen menu display on or off directly from the browser.</p>
+
       <p><strong>Reset Camera</strong> — runs the full reset sequence. The button is active only when connected.
       Advanced controls are loaded based on the detected camera model. Unsupported functions are disabled automatically.</p>
+
+      <p><strong>Delete Presets</strong> — available for supported camera models next to Reset Camera.
+      When checked, it deletes the preset memory, name, and thumbnail for the chosen range (or all 100 presets
+      if <strong>All</strong> is checked) as part of the same reset run. This cannot be undone.</p>
 
       <p>Operation details are shown in the log panel (and optional file log).</p>
 
@@ -167,6 +196,27 @@ function toggleFileLogging(enabled) {
 function closeLoggingInfo(e) {
   if (!e || e.target === document.getElementById('logging-info-modal')) {
     document.getElementById('logging-info-modal').classList.remove('open');
+  }
+}
+
+// ---------- Error modal ----------
+function showErrorModal(msg) {
+  document.getElementById('error-modal-message').textContent = msg;
+  document.getElementById('error-modal').classList.add('open');
+}
+function closeErrorModal(e) {
+  if (!e || e.target === document.getElementById('error-modal')) {
+    document.getElementById('error-modal').classList.remove('open');
+  }
+}
+
+// ---------- Preset delete "All" info ----------
+function showPresetDeleteAllInfo() {
+  document.getElementById('preset-delete-all-modal').classList.add('open');
+}
+function closePresetDeleteAllInfo(e) {
+  if (!e || e.target === document.getElementById('preset-delete-all-modal')) {
+    document.getElementById('preset-delete-all-modal').classList.remove('open');
   }
 }
 
@@ -512,7 +562,7 @@ async function matchingCharacterise() {
         logBox.insertAdjacentText('beforeend', msg.text + '\n');
         logBox.scrollTop = logBox.scrollHeight;
       }
-      if (msg.type === 'reset_done' || msg.type === 'balance_done') {
+      if (msg.type === 'reset_done' || msg.type === 'balance_done' || msg.type === 'preset_delete_done' || msg.type === 'feature_sync_done') {
         htmx.trigger('#camera-panel', 'refreshPanel');
       }
       if (msg.type === 'camera_connected') {

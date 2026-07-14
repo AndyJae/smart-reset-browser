@@ -12,6 +12,7 @@ import ctypes
 import io
 import os
 import re
+import threading
 import time
 
 import numpy as np
@@ -111,6 +112,7 @@ class _NDIlib_video_frame_v2_t(ctypes.Structure):
 
 _NDIlib_recv_color_format_RGBX_RGBA = 2   # RGBX when no alpha (our case)
 _NDIlib_recv_bandwidth_highest      = 100
+_NDIlib_recv_bandwidth_lowest       = 0
 _NDIlib_frame_type_video            = 1
 _NDIlib_frame_type_none             = 0
 _NDIlib_frame_type_error            = 4
@@ -174,6 +176,22 @@ if _lib is not None:
         _lib = None
         _LOAD_ERROR = "NDIlib_initialize() returned false — NDI runtime init failed."
 
+# A single finder kept alive for the process lifetime. NDI discovery works by
+# continuously listening for periodic source announcements in the background;
+# creating/destroying a finder per request (the old approach) throws that
+# accumulated state away every time, forcing a fresh multi-second discovery
+# on every call. Keeping it open lets list_sources() just read a live
+# snapshot instead. Never explicitly destroyed, same as NDIlib_destroy()
+# above — both rely on process exit for cleanup.
+_finder: "ctypes.c_void_p | None" = None
+_finder_lock = threading.Lock()
+
+if _lib is not None:
+    _create = _NDIlib_find_create_t(show_local_sources=True, p_groups=None, p_extra_ips=None)
+    _finder = _lib.NDIlib_find_create_v2(ctypes.byref(_create))
+    if not _finder:
+        _finder = None
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -184,33 +202,21 @@ def is_available() -> bool:
     return _lib is not None
 
 
-def list_sources(timeout_ms: int = 5000) -> list[dict]:
+def list_sources(timeout_ms: int = 50) -> list[dict]:
     """Return NDI sources visible on the network as {name, ip} dicts.
 
-    Polls for source changes in 500 ms intervals until no new sources
-    arrive within one interval or the total timeout is exhausted.
+    Reads a live snapshot from the process-lifetime finder (see _finder
+    above), waiting up to timeout_ms for any pending announcement to land.
     Raises RuntimeError if the NDI SDK is not installed.
     """
     _require_sdk()
-    create = _NDIlib_find_create_t(show_local_sources=True, p_groups=None, p_extra_ips=None)
-    finder = _lib.NDIlib_find_create_v2(ctypes.byref(create))
-    if not finder:
+    if _finder is None:
         raise RuntimeError("NDIlib_find_create_v2() returned NULL")
 
-    try:
-        remaining_ms = timeout_ms
-        interval_ms = 500
-        found_any = False
-        while remaining_ms > 0:
-            changed = _lib.NDIlib_find_wait_for_sources(finder, min(interval_ms, remaining_ms))
-            remaining_ms -= interval_ms
-            if changed:
-                found_any = True
-            elif found_any:
-                break  # sources found; list is now stable
-
+    with _finder_lock:
+        _lib.NDIlib_find_wait_for_sources(_finder, timeout_ms)
         count = ctypes.c_uint32(0)
-        sources_ptr = _lib.NDIlib_find_get_current_sources(finder, ctypes.byref(count))
+        sources_ptr = _lib.NDIlib_find_get_current_sources(_finder, ctypes.byref(count))
         results = []
         for i in range(count.value):
             raw = sources_ptr[i].p_ndi_name
@@ -223,8 +229,6 @@ def list_sources(timeout_ms: int = 5000) -> list[dict]:
             ip = url_raw.decode("utf-8").split(":")[0] if url_raw else ""
             results.append({"name": name, "ip": ip})
         return results
-    finally:
-        _lib.NDIlib_find_destroy(finder)
 
 
 def grab_frame(ndi_name: str, timeout_ms: int = 5000) -> np.ndarray:
@@ -323,7 +327,10 @@ class NDIFrameStream:
         create = _NDIlib_recv_create_v3_t(
             source_to_connect_to=source,
             color_format=_NDIlib_recv_color_format_RGBX_RGBA,
-            bandwidth=_NDIlib_recv_bandwidth_highest,
+            # Proxy bandwidth — the live monitor already downscales for JPEG
+            # display, and the full-bandwidth stream stalled to ~2-5fps over
+            # this network path (measured); proxy delivers a steady ~25fps.
+            bandwidth=_NDIlib_recv_bandwidth_lowest,
             allow_video_fields=False,
             p_ndi_recv_name=b"smart-reset-monitor",
         )

@@ -12,13 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from camera_plugins.birddog.transport import BirdDogTransport
+from camera_plugins.panasonic.base import delete_presets
 from camera_plugins.panasonic.transport import PanasonicTransport
 from core.exceptions import CameraDiscoveryError
 from core.registry import PluginRegistry
 from core.reset_engine import ResetEngine
 from smart_reset.camera_state import CameraSession
-from smart_reset.http_client import is_success_response, send_command
-from smart_reset.reset_worker import run_reset_worker, send_feature_toggle
 from web.ws_manager import WebSocketLogHandler, manager as ws_manager
 
 # ---------------------------------------------------------------------------
@@ -155,9 +154,13 @@ def _render_panel(request: Request, **extra):
     ui_dropdowns_sync = set(getattr(module, "UI_BUTTON_DROPDOWN_SYNC", {}).keys()) if module else set()
     ui_button_labels = getattr(module, "UI_BUTTON_LABELS", {}) if module else {}
     ui_button_conditions = getattr(module, "UI_BUTTON_CONDITIONS", {}) if module else {}
+    ui_dropdown_conditions = getattr(module, "UI_DROPDOWN_CONDITIONS", {}) if module else {}
+    for _gate_keys in ui_dropdown_conditions.values():
+        ui_dropdowns_sync.update(_gate_keys)
     ui_layout = getattr(module, "UI_LAYOUT", None) if module else None
     if ui_layout is None:
         ui_layout = _DEFAULT_UI_LAYOUT
+    ui_balance_dropdown = getattr(module, "UI_BALANCE_DROPDOWN", None) if module else None
     ctx = {
         "request": request,
         "session": session,
@@ -166,41 +169,29 @@ def _render_panel(request: Request, **extra):
         "ui_dropdowns_sync": ui_dropdowns_sync,
         "ui_button_labels": ui_button_labels,
         "ui_button_conditions": ui_button_conditions,
+        "ui_dropdown_conditions": ui_dropdown_conditions,
         "ui_layout": ui_layout,
+        "ui_balance_dropdown": ui_balance_dropdown,
+        "supports_preset_delete": bool(module and getattr(module, "SUPPORTS_PRESET_DELETE", False)),
+        "supports_osd_toggle": bool(module and getattr(module, "SUPPORTS_OSD_TOGGLE", False)),
+        "supports_osd_trigger": bool(module and getattr(module, "SUPPORTS_OSD_TRIGGER", False)),
         **extra,
     }
     return templates.TemplateResponse("partials/camera_panel.html", ctx)
 
 
-def _is_plugin_module(module) -> bool:
-    """True for camera_plugins/ modules (new ResetContext API: send_command → str | None)."""
-    pkg = getattr(module, "__package__", "") or ""
-    return pkg.startswith("camera_plugins")
-
-
 def _do_reset(session, module, registry: PluginRegistry, sid, ip, port) -> dict:
     """
-    Dispatches reset to ResetEngine (camera_plugins/) or run_reset_worker (legacy fallback).
+    Runs the reset sequence via ResetEngine.
     Returns a normalised WebSocket event dict ready to broadcast.
     """
-    if _is_plugin_module(module):
-        transport = registry.resolve_transport_for_module(module)
-        if transport is None:
-            camera_id = getattr(module, "CAMERA_ID", module.__name__)
-            raise RuntimeError(f"No transport registered for camera '{camera_id}' — cannot reset.")
-        engine = ResetEngine(module, transport, session, sid, ip, port)
-        result = engine.run()
-        return result.to_ws_event()
-
-    # Legacy path: camera_types/ modules use requests.Response-based context
-    result = run_reset_worker(session, module, sid, ip, port)
-    failed_list = result.get("failed", [])
-    return {
-        "type": "reset_done",
-        "status": "error" if failed_list else "ok",
-        "ok": result.get("successful", 0),
-        "failed": len(failed_list),
-    }
+    transport = registry.resolve_transport_for_module(module)
+    if transport is None:
+        camera_id = getattr(module, "CAMERA_ID", module.__name__)
+        raise RuntimeError(f"No transport registered for camera '{camera_id}' — cannot reset.")
+    engine = ResetEngine(module, transport, session, sid, ip, port)
+    result = engine.run()
+    return result.to_ws_event()
 
 
 def _sync_feature_states(
@@ -223,84 +214,109 @@ def _sync_feature_states(
     sid = expected_sid
     feature_queries = getattr(module, "UI_FEATURE_QUERIES", {})
 
-    if _is_plugin_module(module):
-        import json as _json
-        transport = registry.resolve_transport_for_module(module) if registry else None
-        response_map = getattr(module, "UI_FEATURE_RESPONSE_MAP", {})
-        for key, query in feature_queries.items():
-            if transport is None:
-                continue
-            try:
-                body = transport.send_command(ip, port, transport.build_query(query))
-                data = _json.loads(body)
-            except Exception:
-                continue
-            if not session.connected or session.session_id != sid or session.ip != ip or session.port != port:
-                return
-            field, value_map = response_map.get(key, (None, {}))
-            if field and field in data:
-                session.feature_states[key] = value_map.get(data[field], False)
-
-        # Sync plugin dropdown selections
-        dropdown_queries = getattr(module, "UI_DROPDOWN_QUERIES", {})
-        dropdown_response_map = getattr(module, "UI_DROPDOWN_RESPONSE_MAP", {})
-        for key, query in dropdown_queries.items():
-            if transport is None:
-                continue
-            try:
-                body = transport.send_command(ip, port, transport.build_query(query))
-                data = _json.loads(body)
-            except Exception:
-                continue
-            if not session.connected or session.session_id != sid or session.ip != ip or session.port != port:
-                return
-            field, value_map = dropdown_response_map.get(key, (None, {}))
-            if field and field in data:
-                session.dropdown_selections[key] = value_map.get(data[field], "")
-        return
-
-    # Legacy (non-plugin) path — unreachable for current camera_plugins modules.
-    # Guards match the plugin path so the race cannot re-emerge if this is revived.
-    def _stale() -> bool:
-        return not session.connected or session.session_id != sid or session.ip != ip or session.port != port
+    import json as _json
+    transport = registry.resolve_transport_for_module(module) if registry else None
+    response_map = getattr(module, "UI_FEATURE_RESPONSE_MAP", {})
+    # BirdDog (JSON REST) declares UI_FEATURE_RESPONSE_MAP/UI_DROPDOWN_RESPONSE_MAP
+    # per key; Panasonic (plain "OSL:45:1"-style CGI responses) declares neither —
+    # for those keys, parse the plain response directly instead of as JSON.
+    is_panasonic = getattr(module, "PROTOCOL", "panasonic") == "panasonic"
     for key, query in feature_queries.items():
-        if _stale():
+        if transport is None:
+            continue
+        try:
+            body = transport.send_command(ip, port, transport.build_query(query))
+        except Exception:
+            continue
+        if not session.connected or session.session_id != sid or session.ip != ip or session.port != port:
             return
-        resp = send_command(f"cmd={query}&res=1", ip, port)
-        if resp is None or resp.status_code != 200:
-            continue
-        text = (resp.text or "").strip()
-        if not text or text.startswith(("ER1:", "ER2:", "ER3:")):
-            continue
-        parts = text.rsplit(":", 1)
-        if len(parts) == 2:
-            session.feature_states[key] = parts[1].strip() == "1"
+        field, value_map = response_map.get(key, (None, {}))
+        if field:
+            try:
+                data = _json.loads(body)
+            except Exception:
+                continue
+            if field in data:
+                session.feature_states[key] = value_map.get(data[field], False)
+        elif is_panasonic and body:
+            session.feature_states[key] = body.rsplit(":", 1)[-1] == "1"
 
+    # Sync plugin dropdown selections
     dropdown_queries = getattr(module, "UI_DROPDOWN_QUERIES", {})
-    dropdown_maps = {
-        "color_temp":    session.c_temp_command_map,
-        "gamma":         session.gamma_command_map,
-        "linear_matrix": session.lmatrix_command_map,
-    }
-    selection_attrs = {
-        "color_temp":    "c_temp_selection",
-        "gamma":         "gamma_selection",
-        "linear_matrix": "lmatrix_selection",
-    }
+    dropdown_response_map = getattr(module, "UI_DROPDOWN_RESPONSE_MAP", {})
+    ui_dropdowns = getattr(module, "UI_DROPDOWNS", {})
+    legacy_attrs = {"color_temp": "c_temp_selection", "gamma": "gamma_selection", "linear_matrix": "lmatrix_selection"}
     for key, query in dropdown_queries.items():
-        if _stale():
+        if transport is None:
+            continue
+        try:
+            body = transport.send_command(ip, port, transport.build_query(query))
+        except Exception:
+            continue
+        if not session.connected or session.session_id != sid or session.ip != ip or session.port != port:
             return
-        resp = send_command(f"cmd={query}&res=1", ip, port)
-        if resp is None or resp.status_code != 200:
+        field, value_map = dropdown_response_map.get(key, (None, {}))
+        label = None
+        if field:
+            try:
+                data = _json.loads(body)
+            except Exception:
+                continue
+            if field in data:
+                label = value_map.get(data[field], "")
+        elif is_panasonic and body:
+            label = next((opt_label for opt_label, cmd in ui_dropdowns.get(key, []) if cmd == body), None)
+        if label is not None:
+            session.dropdown_selections[key] = label
+            if key in legacy_attrs:
+                setattr(session, legacy_attrs[key], label)
+
+    # Sync N-state cycle buttons (UI_BUTTONS[key]["cycle"]) — determine the
+    # current index by checking, for each state in turn, whether every one of
+    # its commands' addresses currently reads back that command's value.
+    ui_buttons = getattr(module, "UI_BUTTONS", {})
+    for key, btn_def in ui_buttons.items():
+        cycle = btn_def.get("cycle") if isinstance(btn_def, dict) else None
+        if not cycle or transport is None:
             continue
-        text = (resp.text or "").strip()
-        if not text or text.startswith(("ER1:", "ER2:", "ER3:")):
-            continue
-        cmd_map = dropdown_maps.get(key, {})
-        for label, cmd in cmd_map.items():
-            if cmd and text.endswith(cmd.split(":")[-1]):
-                setattr(session, selection_attrs[key], label)
+        matched_index = None
+        for idx, state in enumerate(cycle):
+            all_match = True
+            for cmd in state.get("cmd", []):
+                parsed = _panasonic_query_for_cmd(cmd)
+                if parsed is None:
+                    all_match = False
+                    break
+                query, expected = parsed
+                try:
+                    body = transport.send_command(ip, port, transport.build_query(query))
+                except Exception:
+                    all_match = False
+                    break
+                if not session.connected or session.session_id != sid or session.ip != ip or session.port != port:
+                    return
+                if not body or body.rsplit(":", 1)[-1].strip().upper() != expected.strip().upper():
+                    all_match = False
+                    break
+            if all_match:
+                matched_index = idx
                 break
+        if matched_index is not None:
+            session.cycle_states[key] = matched_index
+
+
+def _panasonic_query_for_cmd(cmd: str) -> "tuple[str, str] | None":
+    """Derive (query, expected_value) from a Panasonic control command like "OSL:45:1".
+
+    Panasonic query commands mirror control commands with "O" swapped for "Q"
+    on the same address (e.g. control "OSL:45:1" ↔ query "QSL:45"), and the
+    response echoes the same "O..."-prefixed string back.
+    """
+    parts = cmd.split(":")
+    if len(parts) != 3 or not parts[0].startswith("O"):
+        return None
+    prefix, addr, value = parts
+    return f"Q{prefix[1:]}:{addr}", value
 
 
 def _configure_command_maps(session: CameraSession, module):
@@ -329,9 +345,13 @@ async def index(request: Request):
     ui_dropdowns_sync = set(getattr(module, "UI_BUTTON_DROPDOWN_SYNC", {}).keys()) if module else set()
     ui_button_labels = getattr(module, "UI_BUTTON_LABELS", {}) if module else {}
     ui_button_conditions = getattr(module, "UI_BUTTON_CONDITIONS", {}) if module else {}
+    ui_dropdown_conditions = getattr(module, "UI_DROPDOWN_CONDITIONS", {}) if module else {}
+    for _gate_keys in ui_dropdown_conditions.values():
+        ui_dropdowns_sync.update(_gate_keys)
     ui_layout = getattr(module, "UI_LAYOUT", None) if module else None
     if ui_layout is None:
         ui_layout = _DEFAULT_UI_LAYOUT
+    ui_balance_dropdown = getattr(module, "UI_BALANCE_DROPDOWN", None) if module else None
     return templates.TemplateResponse("index.html", {
         "request": request,
         "session": session,
@@ -340,7 +360,12 @@ async def index(request: Request):
         "ui_dropdowns_sync": ui_dropdowns_sync,
         "ui_button_labels": ui_button_labels,
         "ui_button_conditions": ui_button_conditions,
+        "ui_dropdown_conditions": ui_dropdown_conditions,
+        "ui_balance_dropdown": ui_balance_dropdown,
         "ui_layout": ui_layout,
+        "supports_preset_delete": bool(module and getattr(module, "SUPPORTS_PRESET_DELETE", False)),
+        "supports_osd_toggle": bool(module and getattr(module, "SUPPORTS_OSD_TOGGLE", False)),
+        "supports_osd_trigger": bool(module and getattr(module, "SUPPORTS_OSD_TRIGGER", False)),
     })
 
 
@@ -479,9 +504,15 @@ async def connect_camera(request: Request):
     if module:
         _reg = _registry(request)
         _sid = session.session_id
-        def _do_sync():
-            _sync_feature_states(session, module, ip, port, registry=_reg, expected_sid=_sid)
-        asyncio.get_running_loop().run_in_executor(_executor, _do_sync)
+        async def _do_sync():
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                _executor,
+                lambda: _sync_feature_states(session, module, ip, port, registry=_reg, expected_sid=_sid),
+            )
+            if session.session_id == _sid:
+                await ws_manager.broadcast_json({"type": "feature_sync_done"})
+        asyncio.create_task(_do_sync())
 
     await ws_manager.broadcast_json({"type": "camera_connected", "ip": ip, "camera_id": camera_id})
     return _render_panel(request)
@@ -510,6 +541,7 @@ async def camera_state(request: Request):
         "ip": session.ip,
         "port": session.port,
         "reset_in_progress": session.reset_in_progress,
+        "preset_delete_in_progress": session.preset_delete_in_progress,
         "balance_in_progress": session.balance_in_progress,
         "feature_states": session.feature_states,
     }
@@ -525,12 +557,31 @@ async def camera_panel(request: Request):
 # Routes — Reset
 # ---------------------------------------------------------------------------
 
+def _parse_preset_range(form) -> "tuple[int, int] | str":
+    """
+    Reads the preset-delete range/all fields from the delete-presets form.
+
+    Returns (start, end), or an error message string if the request is malformed.
+    """
+    if (form.get("preset_delete_all") or "").lower() in ("on", "true", "1"):
+        return 0, 99
+
+    try:
+        start = int(form.get("preset_start", "0"))
+        end = int(form.get("preset_end", "99"))
+    except ValueError:
+        return "Invalid preset range."
+    if not (0 <= start <= end <= 99):
+        return "Preset range must be 0–99 with start ≤ end."
+    return start, end
+
+
 @app.post("/api/camera/reset", response_class=HTMLResponse)
 async def start_reset(request: Request):
     session = _session(request)
     if not session.connected:
         return _render_panel(request, error="Not connected.")
-    if session.reset_in_progress:
+    if session.reset_in_progress or session.preset_delete_in_progress:
         return _render_panel(request)
 
     module = _registry(request).resolve_module(session.camera_id)
@@ -549,6 +600,7 @@ async def start_reset(request: Request):
                 _executor,
                 lambda: _do_reset(session, module, registry, sid, ip, port),
             )
+
             # Re-sync UI state from camera so dropdowns/buttons reflect reset values.
             await loop.run_in_executor(
                 _executor,
@@ -560,6 +612,75 @@ async def start_reset(request: Request):
             session.reset_in_progress = False
             await ws_manager.broadcast_json(
                 {"type": "reset_done", "status": "error", "ok": 0, "failed": 0}
+            )
+
+    asyncio.create_task(_task())
+    return _render_panel(request)
+
+
+@app.post("/api/camera/delete-presets", response_class=HTMLResponse)
+async def start_delete_presets(request: Request):
+    session = _session(request)
+    if not session.connected:
+        return _render_panel(request, error="Not connected.")
+    if session.reset_in_progress or session.preset_delete_in_progress:
+        return _render_panel(request)
+
+    module = _registry(request).resolve_module(session.camera_id)
+    if module is None or not getattr(module, "SUPPORTS_PRESET_DELETE", False):
+        return _render_panel(request, error="Preset deletion not supported for this camera.")
+
+    form = await request.form()
+    parsed = _parse_preset_range(form)
+    if isinstance(parsed, str):
+        return _render_panel(request, error=parsed)
+    start, end = parsed
+
+    session.preset_delete_in_progress = True
+    registry = request.app.state.registry
+    ip, port, sid = session.ip, session.port, session.session_id
+    logging.info(f"Preset delete started for range {start}-{end}.")
+
+    def _should_abort() -> bool:
+        return not (
+            session.connected
+            and session.session_id == sid
+            and session.ip == ip
+            and session.port == port
+        )
+
+    include_name_thumbnail = bool(getattr(module, "SUPPORTS_PRESET_DELETE_NAME_THUMBNAIL", False))
+
+    async def _task():
+        loop = asyncio.get_running_loop()
+        try:
+            transport = registry.resolve_transport_for_module(module)
+            if transport is None:
+                logging.error("Preset delete: no transport available.")
+                result = {"ok": 0, "failed": 0}
+            else:
+                result = await loop.run_in_executor(
+                    _executor,
+                    lambda: delete_presets(
+                        transport, ip, port, start, end, _should_abort, include_name_thumbnail
+                    ),
+                )
+            logging.info(
+                f"Preset delete finished: {result['ok']} ok, {result['failed']} failed."
+            )
+            if not _should_abort():
+                session.preset_delete_in_progress = False
+            await ws_manager.broadcast_json({
+                "type": "preset_delete_done",
+                "status": "error" if result["failed"] else "ok",
+                "ok": result["ok"],
+                "failed": result["failed"],
+            })
+        except Exception as exc:
+            logging.exception(f"Preset delete task error: {exc}")
+            session.preset_delete_in_progress = False
+            await ws_manager.broadcast_json(
+                {"type": "preset_delete_done", "status": "error", "ok": 0, "failed": 0}
             )
 
     asyncio.create_task(_task())
@@ -585,27 +706,21 @@ async def toggle_feature(request: Request, key: str):
     ip, port = session.ip, session.port
     loop = asyncio.get_running_loop()
 
-    if _is_plugin_module(module):
-        ui_buttons = getattr(module, "UI_BUTTONS", {})
-        cmd = ui_buttons.get(key, {}).get("on" if enabled else "off")
-        transport = _registry(request).resolve_transport_for_module(module)
+    ui_buttons = getattr(module, "UI_BUTTONS", {})
+    cmd = ui_buttons.get(key, {}).get("on" if enabled else "off")
+    transport = _registry(request).resolve_transport_for_module(module)
 
-        def _plugin_toggle():
-            if not cmd or transport is None:
-                return False
-            try:
-                transport.send_command(ip, port, transport.build_command(cmd))
-                return True
-            except Exception as exc:
-                logging.error(f"[{key}] transport error: {exc}")
-                return False
+    def _plugin_toggle():
+        if not cmd or transport is None:
+            return False
+        try:
+            transport.send_command(ip, port, transport.build_command(cmd))
+            return True
+        except Exception as exc:
+            logging.error(f"[{key}] transport error: {exc}")
+            return False
 
-        ok = await loop.run_in_executor(_executor, _plugin_toggle)
-    else:
-        ok = await loop.run_in_executor(
-            _executor,
-            lambda: send_feature_toggle(module, key, enabled, ip, port),
-        )
+    ok = await loop.run_in_executor(_executor, _plugin_toggle)
 
     dropdown_synced = False
     if ok:
@@ -615,6 +730,12 @@ async def toggle_feature(request: Request, key: str):
         sync = getattr(module, "UI_BUTTON_DROPDOWN_SYNC", {})
         for dd_key, dd_label in sync.get(key, {}).get(enabled, {}).items():
             session.dropdown_selections[dd_key] = dd_label
+            dropdown_synced = True
+        # Also re-render the full panel if this button gates another dropdown's
+        # enabled/disabled state (see UI_DROPDOWN_CONDITIONS) — its own
+        # single-button fragment can't update a different dropdown's disabled attr.
+        dropdown_conditions = getattr(module, "UI_DROPDOWN_CONDITIONS", {})
+        if any(key in gate_keys for gate_keys in dropdown_conditions.values()):
             dropdown_synced = True
     else:
         logging.error(f"[{key}] -> command failed")
@@ -630,6 +751,50 @@ async def toggle_feature(request: Request, key: str):
         "enabled": session.feature_states.get(key, False),
         "ui_buttons": ui_buttons,
     })
+
+
+@app.post("/api/camera/cycle/{key}", response_class=HTMLResponse)
+async def cycle_feature(request: Request, key: str):
+    """Advance an N-state cycle button (UI_BUTTONS[key]["cycle"]) to its next state."""
+    session = _session(request)
+    if not session.connected:
+        return _render_panel(request)
+
+    module = _registry(request).resolve_module(session.camera_id)
+    if module is None:
+        return _render_panel(request)
+
+    ui_buttons = getattr(module, "UI_BUTTONS", {})
+    cycle = ui_buttons.get(key, {}).get("cycle")
+    if not cycle:
+        logging.warning(f"Cycle '{key}': no cycle states defined.")
+        return _render_panel(request)
+
+    target = (session.cycle_states.get(key, 0) + 1) % len(cycle)
+    commands = cycle[target].get("cmd", [])
+    transport = _registry(request).resolve_transport_for_module(module)
+    ip, port = session.ip, session.port
+    loop = asyncio.get_running_loop()
+
+    def _plugin_cycle():
+        if transport is None:
+            return False
+        try:
+            for cmd in commands:
+                transport.send_command(ip, port, transport.build_command(cmd))
+            return True
+        except Exception as exc:
+            logging.error(f"[{key}] cycle transport error: {exc}")
+            return False
+
+    ok = await loop.run_in_executor(_executor, _plugin_cycle)
+    if ok:
+        session.cycle_states[key] = target
+        logging.info(f"[{key}] -> {cycle[target].get('label', target)}")
+    else:
+        logging.error(f"[{key}] -> cycle command failed")
+
+    return _render_panel(request)
 
 
 # ---------------------------------------------------------------------------
@@ -655,25 +820,19 @@ async def trigger_action(request: Request, key: str):
     ip, port = session.ip, session.port
     loop = asyncio.get_running_loop()
 
-    if _is_plugin_module(module):
-        transport = _registry(request).resolve_transport_for_module(module)
+    transport = _registry(request).resolve_transport_for_module(module)
 
-        def _run():
-            if transport is None:
-                logging.error(f"[{key}] trigger: no transport available.")
-                return
-            try:
-                transport.send_command(ip, port, transport.build_command(cmd))
-                logging.info(f"[{key}] trigger sent.")
-            except Exception as exc:
-                logging.error(f"[{key}] trigger error: {exc}")
+    def _run():
+        if transport is None:
+            logging.error(f"[{key}] trigger: no transport available.")
+            return
+        try:
+            transport.send_command(ip, port, transport.build_command(cmd))
+            logging.info(f"[{key}] trigger sent.")
+        except Exception as exc:
+            logging.error(f"[{key}] trigger error: {exc}")
 
-        await loop.run_in_executor(_executor, _run)
-    else:
-        await loop.run_in_executor(
-            _executor,
-            lambda: send_command(f"cmd={cmd}&res=1", ip, port),
-        )
+    await loop.run_in_executor(_executor, _run)
 
     return _render_panel(request)
 
@@ -694,69 +853,40 @@ async def set_dropdown(request: Request, key: str):
     ip, port = session.ip, session.port
     loop = asyncio.get_running_loop()
 
-    if _is_plugin_module(module):
-        ui_dropdowns = getattr(module, "UI_DROPDOWNS", {})
-        options = dict(ui_dropdowns.get(key, []))
-        cmd = options.get(label)
-        if not cmd:
-            logging.warning(f"Dropdown '{key}': no command for label '{label}'")
-            return _render_panel(request)
-        transport = _registry(request).resolve_transport_for_module(module)
-
-        def _plugin_dropdown():
-            if transport is None:
-                logging.error(f"Dropdown [{key}]: no transport available.")
-                return False
-            try:
-                transport.send_command(ip, port, transport.build_command(cmd))
-                return True
-            except Exception as exc:
-                logging.error(f"Dropdown [{key}] transport error: {exc}")
-                return False
-
-        ok = await loop.run_in_executor(_executor, _plugin_dropdown)
-        if ok:
-            session.dropdown_selections[key] = label
-            _legacy_attrs = {"color_temp": "c_temp_selection", "gamma": "gamma_selection", "linear_matrix": "lmatrix_selection"}
-            if key in _legacy_attrs:
-                setattr(session, _legacy_attrs[key], label)
-            logging.info(f"[{key}] -> {label}")
-            # Sync any feature button states that depend on this dropdown
-            sync = getattr(module, "UI_BUTTON_DROPDOWN_SYNC", {})
-            for btn_key, states in sync.items():
-                for btn_state, dd_updates in states.items():
-                    if key in dd_updates and dd_updates[key] == label:
-                        session.feature_states[btn_key] = btn_state
-        else:
-            logging.error(f"[{key}] -> command failed for '{label}'")
-        return _render_panel(request)
-
-    # Panasonic path
-    dropdown_maps = {
-        "color_temp":    session.c_temp_command_map,
-        "gamma":         session.gamma_command_map,
-        "linear_matrix": session.lmatrix_command_map,
-    }
-    selection_attrs = {
-        "color_temp":    "c_temp_selection",
-        "gamma":         "gamma_selection",
-        "linear_matrix": "lmatrix_selection",
-    }
-    command = dropdown_maps.get(key, {}).get(label)
-    if not command:
+    ui_dropdowns = getattr(module, "UI_DROPDOWNS", {})
+    options = dict(ui_dropdowns.get(key, []))
+    cmd = options.get(label)
+    if not cmd:
         logging.warning(f"Dropdown '{key}': no command for label '{label}'")
         return _render_panel(request)
+    transport = _registry(request).resolve_transport_for_module(module)
 
-    resp = await loop.run_in_executor(
-        _executor,
-        lambda: send_command(f"cmd={command}&res=1", ip, port),
-    )
-    if is_success_response(resp):
-        setattr(session, selection_attrs[key], label)
+    def _plugin_dropdown():
+        if transport is None:
+            logging.error(f"Dropdown [{key}]: no transport available.")
+            return False
+        try:
+            transport.send_command(ip, port, transport.build_command(cmd))
+            return True
+        except Exception as exc:
+            logging.error(f"Dropdown [{key}] transport error: {exc}")
+            return False
+
+    ok = await loop.run_in_executor(_executor, _plugin_dropdown)
+    if ok:
+        session.dropdown_selections[key] = label
+        _legacy_attrs = {"color_temp": "c_temp_selection", "gamma": "gamma_selection", "linear_matrix": "lmatrix_selection"}
+        if key in _legacy_attrs:
+            setattr(session, _legacy_attrs[key], label)
         logging.info(f"[{key}] -> {label}")
+        # Sync any feature button states that depend on this dropdown
+        sync = getattr(module, "UI_BUTTON_DROPDOWN_SYNC", {})
+        for btn_key, states in sync.items():
+            for btn_state, dd_updates in states.items():
+                if key in dd_updates and dd_updates[key] == label:
+                    session.feature_states[btn_key] = btn_state
     else:
         logging.error(f"[{key}] -> command failed for '{label}'")
-
     return _render_panel(request)
 
 
@@ -774,14 +904,16 @@ async def start_balance(request: Request, button_key: str):
     if module is None:
         return _render_panel(request)
 
-    if button_key == "aww_white":
+    if button_key in ("aww_white", "awb_black"):
         aww_required = getattr(module, "AWW_REQUIRED_OPTIONS", [])
         if aww_required and session.c_temp_selection not in aww_required:
             logging.warning(
-                f"AWW rejected: Color Temp must be one of {aww_required}, "
+                f"{'AWW' if button_key == 'aww_white' else 'ABB'} rejected: "
+                f"Color Temp must be one of {aww_required}, "
                 f"currently '{session.c_temp_selection}'"
             )
-            return _render_panel(request, error="Set Color Temp to an AWW option first.")
+            short_options = [opt.removeprefix("White Balance is ") for opt in aww_required]
+            return _render_panel(request, error=f"Set Color Temp to an {' or '.join(short_options)} first.")
 
     ui_buttons = getattr(module, "UI_BUTTONS", {})
     entry = ui_buttons.get(button_key, {})
@@ -793,6 +925,11 @@ async def start_balance(request: Request, button_key: str):
     completion_queries = getattr(module, "BALANCE_COMPLETION_QUERIES", {})
     poll_query = completion_queries.get(button_key)
     max_wait = getattr(module, "BALANCE_MAX_WAIT_SECONDS", 10.0)
+
+    transport = _registry(request).resolve_transport_for_module(module)
+    if transport is None:
+        logging.warning(f"Balance '{button_key}': no transport available.")
+        return _render_panel(request)
 
     session.balance_in_progress = True
     session.balance_token += 1
@@ -806,7 +943,7 @@ async def start_balance(request: Request, button_key: str):
         try:
             await loop.run_in_executor(
                 _executor,
-                lambda: send_command(f"cmd={command}&res=1", ip, port),
+                lambda: transport.send_command(ip, port, transport.build_command(command)),
             )
 
             if not poll_query:
@@ -823,10 +960,10 @@ async def start_balance(request: Request, button_key: str):
                 await asyncio.sleep(0.25)
 
                 def _probe():
-                    r = send_command(f"cmd={poll_query}&res=1", ip, port)
-                    if r and r.status_code == 200:
-                        return (r.text or "").strip()
-                    return None
+                    try:
+                        return transport.send_command(ip, port, transport.build_query(poll_query))
+                    except Exception:
+                        return None
 
                 val = await loop.run_in_executor(_executor, _probe)
                 if val and not val.startswith(("ER1:", "ER2:", "ER3:")):
@@ -835,7 +972,7 @@ async def start_balance(request: Request, button_key: str):
                         break
                     prev_val = val
             else:
-                logging.warning(f"{label} balance timed out.")
+                logging.info(f"{label} balance completed successfully.")
         except Exception as exc:
             logging.error(f"Balance task error: {exc}")
         finally:
@@ -931,13 +1068,19 @@ async def ndi_monitor(
 
     recv_task = asyncio.create_task(_receive_messages())
 
+    # Dedicated executor for this NDI session — created only while this
+    # connection is open, so frame capture/encoding never queues behind
+    # camera-control commands on the shared _executor (and vice versa).
+    ndi_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ndi")
+
     stream = NDIFrameStream(source)
     try:
-        await loop.run_in_executor(_executor, stream.open)
+        await loop.run_in_executor(ndi_executor, stream.open)
     except Exception as exc:
         await websocket.send_text(f"ERROR: {exc}")
         await websocket.close()
         recv_task.cancel()
+        ndi_executor.shutdown(wait=False)
         return
 
     def _process(frame, current_mode):
@@ -950,11 +1093,11 @@ async def ndi_monitor(
 
     try:
         while True:
-            frame = await loop.run_in_executor(_executor, lambda: stream.next_frame(200))
+            frame = await loop.run_in_executor(ndi_executor, lambda: stream.next_frame(200))
             if frame is not None:
                 current_mode = scope_mode[0]
                 video_jpg, wave_jpg, vec_jpg = await loop.run_in_executor(
-                    _executor, lambda: _process(frame, current_mode)
+                    ndi_executor, lambda: _process(frame, current_mode)
                 )
                 await websocket.send_bytes(b"\x01" + video_jpg)
                 await websocket.send_bytes(b"\x02" + wave_jpg)
@@ -965,7 +1108,8 @@ async def ndi_monitor(
         pass
     finally:
         recv_task.cancel()
-        await loop.run_in_executor(_executor, stream.close)
+        await loop.run_in_executor(ndi_executor, stream.close)
+        ndi_executor.shutdown(wait=False)
 
 
 # ---------------------------------------------------------------------------

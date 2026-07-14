@@ -10,11 +10,7 @@ Hierarchie:
   ├── CameraError                 — Basis für alle Kamera-Kommunikationsfehler
   │   ├── CameraConnectionError   — Netzwerkfehler, Timeout
   │   ├── CameraResponseError     — HTTP-Status != 200
-  │   ├── CameraCommandError      — Kamera meldet ER1:/ER2:/ER3: (Protokoll-Fehler)
   │   └── CameraDiscoveryError    — Discovery-Socket- oder Netzwerkfehler
-  ├── PluginError                 — Basis für Plugin-System-Fehler
-  │   ├── PluginNotFoundError     — kein Modul für erkannte Modell-ID registriert
-  │   └── PluginLoadError         — Modul konnte nicht importiert/geladen werden
   └── SessionError                — Basis für Session-Zustandsfehler
       └── StaleSessionError       — session_id stimmt nicht mehr überein
 """
@@ -59,24 +55,6 @@ class CameraResponseError(CameraError):
         self.body = body
 
 
-class CameraCommandError(CameraError):
-    """
-    Die Kamera hat den Befehl abgelehnt (Protokoll-Fehler).
-
-    Panasonic:  Response beginnt mit "ER1:", "ER2:" oder "ER3:"
-    BirdDog:    JSON mit {"status": "error"}
-
-    Attribute:
-        error_code   — herstellerspezifischer Fehlercode ("ER1", "ER2", …)
-        response     — vollständiger Response-Body
-    """
-
-    def __init__(self, message: str, error_code: str = "", response: str = ""):
-        super().__init__(message)
-        self.error_code = error_code
-        self.response = response
-
-
 class CameraDiscoveryError(CameraError):
     """
     Fehler während der UDP-Netzwerk-Discovery.
@@ -84,43 +62,6 @@ class CameraDiscoveryError(CameraError):
     Wird ausgelöst bei Socket-Fehler, fehlenden Netzwerkinterfaces oder
     wenn der Discovery-Socket nicht gebunden werden kann.
     """
-
-
-# ---------------------------------------------------------------------------
-# Plugin-System-Fehler
-# ---------------------------------------------------------------------------
-
-class PluginError(SmartResetError):
-    """Basis für Fehler im Plugin-Ladesystem."""
-
-
-class PluginNotFoundError(PluginError):
-    """
-    Für die erkannte Kamera-Modell-ID ist kein Plugin registriert.
-
-    Attribute:
-        camera_id  — die erkannte Modell-ID (z. B. "AW-UE200")
-    """
-
-    def __init__(self, camera_id: str):
-        super().__init__(f"No plugin registered for camera model '{camera_id}'.")
-        self.camera_id = camera_id
-
-
-class PluginLoadError(PluginError):
-    """
-    Ein Plugin-Modul konnte nicht importiert oder initialisiert werden.
-
-    Attribute:
-        module_name  — Name des fehlgeschlagenen Moduls
-    """
-
-    def __init__(self, module_name: str, reason: str = ""):
-        msg = f"Failed to load plugin module '{module_name}'."
-        if reason:
-            msg += f" Reason: {reason}"
-        super().__init__(msg)
-        self.module_name = module_name
 
 
 # ---------------------------------------------------------------------------

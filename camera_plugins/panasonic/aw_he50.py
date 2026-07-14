@@ -14,13 +14,13 @@ from camera_plugins.panasonic.base import (
     build_entries as _build_entries,
     ensure_dropdown_value as _ensure_dropdown_value,
     filter_entries as _filter_entries,
-    send_set_command as _send_set_command,
-    skip_reset_commands as _skip_reset_commands,
 )
 
 CAMERA_ID         = "AW-HE50"
 CAMERA_ID_ALIASES = ["AW-HE50H", "AW-HE50E", "AW-HE50S"]
 DISPLAY_NAME      = "Panasonic AW-HE50"
+SUPPORTS_OSD_TOGGLE = True
+SUPPORTS_PRESET_DELETE = True
 
 # ---------------------------------------------------------------------------
 # RESET_COMMANDS
@@ -65,6 +65,7 @@ UI_BUTTONS = {
     "awb_black":  {"cmd": "OAS"},
     "aww_white":  {"cmd": "OWS"},
     "drs":        {"on": "OSE:33:1", "off": "OSE:33:0"},
+    "osd":        {"on": "DUS:1",    "off": "DUS:0"},
     "white_clip": {"on": "OSA:2E:1", "off": "OSA:2E:0"},
 }
 
@@ -72,6 +73,7 @@ UI_BUTTON_LABELS = {
     "auto_focus": "Auto Focus",
     "auto_iris":  "Auto Iris",
     "drs":        "DRS",
+    "osd":        "OSD",
     "white_clip": "White Clip",
     "awb_black":  "ABB (Black)",
     "aww_white":  "AWW (White)",
@@ -79,7 +81,7 @@ UI_BUTTON_LABELS = {
 
 UI_LAYOUT = [
     ("drs",        "auto_iris",  "auto_focus", "color_temp"),
-    ("white_clip", "awb_black",  "aww_white",  None),
+    ("white_clip", None,         None,         None),
 ]
 
 UI_DROPDOWNS = {
@@ -104,6 +106,7 @@ UI_FEATURE_QUERIES = {
     "auto_focus": "QAF",
     "auto_iris":  "QRS",
     "drs":        "QSE:33",
+    "osd":        "QUS",
     "white_clip": "QSA:2E",
 }
 
@@ -113,7 +116,7 @@ UI_DROPDOWN_QUERIES = {
 
 POST_RESET_FEATURE_STATES = [
     ("auto_iris",  True),
-    ("auto_focus", False),
+    ("auto_focus", True),
     ("drs",        False),
     ("white_clip", False),
 ]

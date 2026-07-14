@@ -29,7 +29,8 @@ Typisches Verwendungsmuster in einem Kameramodul:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import logging
+from typing import Any, Callable, Optional
 
 # ---------------------------------------------------------------------------
 # Protokoll-Konstante
@@ -39,6 +40,8 @@ PROTOCOL: str = "panasonic"
 
 # Fehler-Prefixe des Panasonic CGI-Protokolls
 _ERROR_PREFIXES = ("ER1:", "ER2:", "ER3:")
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -243,3 +246,88 @@ def filter_entries(
     key_set = {("OSL", "25"), ("OSJ", "0D"), ...}
     """
     return [e for e in entries if (e["cmd"], e["addr"]) in key_set]
+
+
+# ---------------------------------------------------------------------------
+# Preset-Löschung
+# ---------------------------------------------------------------------------
+
+def delete_presets(
+    transport: Any,
+    ip: str,
+    port: str,
+    start: int,
+    end: int,
+    should_abort: Callable[[], bool],
+    include_name_thumbnail: bool,
+) -> dict:
+    """
+    Löscht Preset Memory (und optional Name + Thumbnail) für die Presets start..end
+    (inklusiv, 0-99).
+
+    Preset Memory (#C[nn], aw_ptz) ist laut Panasonic HD/4K Integrated Camera
+    Interface Specifications v1.12 (Tabelle 3.1.7, "Preset (delete) control
+    command") auf allen SUPPORTS_PRESET_DELETE-Kameras identisch (UE- wie
+    HE-Serie) und hat keine Bulk-Variante — immer Einzelschleife.
+
+    Name (OSJ:36/OSJ:37) und Thumbnail (OSJ:3A/OSJ:3B) sind laut Spec
+    (Tabelle 3.2.19.2) nur für die AW-UE150(A)-Familie dokumentiert. Der
+    Aufrufer muss include_name_thumbnail explizit anhand des Modul-Flags
+    SUPPORTS_PRESET_DELETE_NAME_THUMBNAIL setzen — bei False wird dieser
+    Teil komplett übersprungen, damit auf Kameras ohne dieses Feature
+    (z. B. HE-Serie) keine erfundenen Befehle gesendet werden.
+
+    start..end == 0..99  → Bulk-Shortcut für Name/Thumbnail (OSJ:37 / OSJ:3B je einmal).
+    Sonst                → Name/Thumbnail einzeln pro Preset (OSJ:36:[nn] / OSJ:3A:[nn]).
+
+    should_abort() wird vor jedem Kamera-Aufruf geprüft; bricht früh ab wenn True
+    (Session wurde inzwischen ungültig — spiegelt ResetEngine._guard()).
+
+    Gibt {"ok": int, "failed": int} zurück.
+    """
+    from core.exceptions import CameraError
+
+    counts = {"ok": 0, "failed": 0}
+
+    def _run(kind: str, cmd: str) -> None:
+        try:
+            body = (
+                transport.send_ptz_command(ip, port, cmd)
+                if kind == "ptz"
+                else transport.send_command(ip, port, cmd)
+            )
+        except CameraError as exc:
+            counts["failed"] += 1
+            logger.error(f"Preset delete: '{cmd}' failed: {exc}")
+            return
+        if body is not None and body.startswith(_ERROR_PREFIXES):
+            counts["failed"] += 1
+            logger.error(f"Preset delete: '{cmd}' returned camera error: {body}")
+            return
+        counts["ok"] += 1
+
+    for nn in range(start, end + 1):
+        if should_abort():
+            return counts
+        _run("ptz", f"cmd=%23C{nn:02d}&res=1")
+
+    if not include_name_thumbnail:
+        return counts
+
+    if (start, end) == (0, 99):
+        if should_abort():
+            return counts
+        _run("cam", "cmd=OSJ:37&res=1")
+        if should_abort():
+            return counts
+        _run("cam", "cmd=OSJ:3B&res=1")
+    else:
+        for nn in range(start, end + 1):
+            if should_abort():
+                return counts
+            _run("cam", f"cmd=OSJ:36:{nn:02d}&res=1")
+            if should_abort():
+                return counts
+            _run("cam", f"cmd=OSJ:3A:{nn:02d}&res=1")
+
+    return counts

@@ -54,7 +54,29 @@ def _open_browser():
     webbrowser.open(URL)
 
 
+def _patch_pystray_win11():
+    # pystray calls SetForegroundWindow before TrackPopupMenuEx, but on
+    # Windows 11 that call silently fails unless the thread recently handled
+    # user input — causing the menu to appear but clicks to do nothing.
+    # keybd_event(0,0,0,0) is the standard trick to re-qualify the thread.
+    try:
+        import pystray._win32 as _backend
+        _WM_RBUTTONUP = 0x0205
+        _orig = _backend.Icon._on_notify
+
+        def _fixed(self, wparam, lparam):
+            if lparam == _WM_RBUTTONUP:
+                ctypes.windll.user32.keybd_event(0, 0, 0, 0)
+            return _orig(self, wparam, lparam)
+
+        _backend.Icon._on_notify = _fixed
+    except Exception:
+        pass
+
+
 def main():
+    _patch_pystray_win11()
+
     # When running as a windowless exe, sys.stdout/stderr are None.
     # Redirect to a log file so crashes are visible instead of silently swallowed.
     if sys.stdout is None or sys.stderr is None:
@@ -83,9 +105,11 @@ def main():
         webbrowser.open(URL)
 
     def on_quit(icon, _item):
-        server.should_exit = True
-        icon.stop()
-        os._exit(0)
+        try:
+            server.should_exit = True
+            icon.stop()
+        finally:
+            os._exit(0)
 
     try:
         tray = pystray.Icon(
