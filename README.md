@@ -109,6 +109,16 @@ AK-UB300
 
 ---
 
+## Testing without a camera
+
+Don't have a Panasonic PTZ camera on hand? [Panasonic_PTZ_Emulator](https://github.com/AndyJae/Panasonic_PTZ_Emulator)
+simulates the same CGI protocol, including reset sequences, feature toggles,
+and gain/pedestal — point this app at it instead of a real camera's IP and
+Connect, Reset, and the feature buttons above all work the same way. (It
+doesn't cover BirdDog cameras.)
+
+---
+
 ## Project Structure
 
 ```
