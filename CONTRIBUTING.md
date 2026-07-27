@@ -21,7 +21,12 @@ Developers are encouraged to contribute new ideas and actively help shape the di
 4. Define `RESET_COMMANDS` — ordered list of CGI commands
 5. Define `UI_BUTTONS`, `UI_DROPDOWNS`, `UI_LAYOUT` for the controls panel
 6. Add `CAMERA_ID_ALIASES` if the camera responds with multiple model strings
-7. Test against real hardware — no emulator exists
+7. Test against real hardware. For an early sanity check before hardware is
+   available, [Panasonic_PTZ_Emulator](https://github.com/AndyJae/Panasonic_PTZ_Emulator)
+   is a shared Panasonic CGI camera emulator built for this project and
+   [X-Touch_PTZ_Control](https://github.com/AndyJae/X-Touch_PTZ_Control) — it
+   doesn't replace the real-hardware requirement below, it just catches
+   obviously wrong command shapes earlier
 
 ### BirdDog
 
